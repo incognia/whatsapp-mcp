@@ -1,23 +1,23 @@
-# Historial de cambios
+# Changelog
 
-**Nota:** Todas las fechas están en zona horaria CST de Ciudad de México (UTC-6).
+**Note:** All dates are in Mexico City CST (UTC-6).
 
 <!-- markdownlint-disable MD013 MD024 MD022 MD032 -->
-## [2026-10-06] - Menciones al enviar y ruta fija de `store/`
+## [2026-10-06] - Mentions on send and a fixed `store/` path
 
-- feat: aceptar en `/api/send` una lista opcional `mentions` y enviarla como mensaje de texto extendido con `ContextInfo.MentionedJID`, para que las etiquetas de grupo notifiquen a la persona mencionada
-- feat: exponer el parámetro `mentions` en la herramienta `send_message` del servidor MCP
-- fix: usar siempre la carpeta `store/` junto al binario del *bridge*, sin importar el directorio desde donde se ejecute; antes, arrancarlo desde otra ruta creaba una sesión nueva que el servidor MCP no leía
-- chore: ignorar en Git el binario compilado `whatsapp-bridge/whatsapp-bridge`
+- feat: accept an optional `mentions` list on `/api/send` and send it as an extended text message with `ContextInfo.MentionedJID`, so group tags notify the mentioned person
+- feat: expose the `mentions` parameter on the MCP server's `send_message` tool
+- fix: always use the `store/` folder next to the bridge binary, whatever directory it is launched from; previously, starting it from another path created a new session that the MCP server never read
+- chore: ignore the compiled `whatsapp-bridge/whatsapp-bridge` binary in Git
 
-## [2026-10-03] - Remitentes de grupo y menciones con LID
+## [2026-10-03] - Group senders and LID mentions
 
-- fix: leer el remitente de los mensajes de grupo desde `WebMessageInfo.participant` cuando la llave del mensaje no lo trae, como ocurre en las sincronizaciones de historial recientes; antes se guardaba el grupo como remitente
-- feat: traducir las menciones «@<LID>» del texto a «@<número>» al guardar mensajes y corregir al arrancar las ya almacenadas
-- feat: mostrar en el servidor MCP «@<nombre>» en lugar de «@<número>» al formatear mensajes, y «@Me» para las menciones propias
+- fix: read the sender of group messages from `WebMessageInfo.participant` when the message key does not carry it, as recent history syncs do; previously the group itself was stored as the sender
+- feat: translate "@<LID>" mentions in message text to "@<phone number>" when storing messages, and fix already stored ones on startup
+- feat: show "@<name>" instead of "@<phone number>" when the MCP server formats messages, and "@Me" for the user's own mentions
 
-## [2026-10-02] - Compatibilidad con whatsmeow actual y direccionamiento LID
+## [2026-10-02] - Compatibility with current whatsmeow and LID addressing
 
-- fix: actualizar `whatsmeow` a `v0.0.0-20260929112325` para resolver el error de conexión «Client outdated (405)», pasando `context.Context` a las llamadas de su API actualizada
-- fix: traducir los JID con LID (`@lid`) a su número de teléfono en chats y remitentes, tanto en mensajes en vivo como en la sincronización de historial, para que una misma conversación no quede dividida en dos chats
-- feat: unir al arrancar los chats y remitentes ya guardados con LID en sus equivalentes por número de teléfono
+- fix: upgrade `whatsmeow` to `v0.0.0-20260929112325` to resolve the "Client outdated (405)" connection error, passing `context.Context` to its updated API calls
+- fix: translate LID JIDs (`@lid`) to their phone number for chats and senders, in both live messages and history sync, so a single conversation is no longer split into two chats
+- feat: merge chats and senders already stored under LIDs into their phone-number equivalents on startup
