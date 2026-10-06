@@ -5,6 +5,8 @@
 <!-- markdownlint-disable MD013 MD024 MD022 MD032 -->
 ## [2026-10-06] - Mentions on send and a fixed `store/` path
 
+- fix: store the captions of images, videos and documents as message content, unwrapping ephemeral, view-once and document-with-caption envelopes, and use the same text extraction for live and history-synced messages (upstream PR #350 by Matija Stepanic)
+- fix: keep the signed query string when extracting the direct path from a media URL, so `download_media` no longer fails with a CDN 403 (upstream PR #361 by cherian)
 - fix: refuse `media_path` values containing `..` in `/api/send` and, when `WHATSAPP_MEDIA_ROOTS` is set, only read media from those directories, closing a CWE-22 path traversal (upstream PR #275 by HalemoGPA)
 - fix: bind the bridge REST API to `127.0.0.1` by default instead of every network interface, since it has no authentication and can read and send messages on the linked account; set `BIND_ADDR=0.0.0.0` to opt into LAN exposure (upstream PR #224 by jmmgreg)
 - feat: accept an optional `mentions` list on `/api/send` and send it as an extended text message with `ContextInfo.MentionedJID`, so group tags notify the mentioned person
