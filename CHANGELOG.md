@@ -5,6 +5,8 @@
 <!-- markdownlint-disable MD013 MD024 MD022 MD032 -->
 ## [2026-10-06] - Mentions on send and a fixed `store/` path
 
+- docs: add OpenSpec change proposals, each with proposal, delta specs, design and tasks, for storing sent messages (`store-sent-messages`), accent-insensitive contact search over the full address book (`accent-insensitive-contact-search`), on-demand per-chat history backfill (`per-chat-history-sync`) and message listeners with signed webhook delivery (`message-webhooks`), based on the daymade, LukasHaas and AdamRussak forks and upstream PRs #229, #265, #343, #364, #326, #183 and #191
+- chore: initialise OpenSpec with the spec-driven schema and UK English artefacts, and add its Claude Code `/opsx` commands and skills
 - chore: ignore the bridge's `store/` folder in Git, so downloaded media and session data can never be committed by mistake
 - fix: name generated media files after the message's own time plus a suffix of its ID instead of the time the bridge processed it, so media replayed during history sync no longer shares one filename and overwrites other files on download, and rename already stored media on startup (approach from upstream PR #270 by Smartinny)
 - fix: store the captions of images, videos and documents as message content, unwrapping ephemeral, view-once and document-with-caption envelopes, and use the same text extraction for live and history-synced messages (upstream PR #350 by Matija Stepanic)
