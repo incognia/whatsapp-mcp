@@ -3,6 +3,7 @@ from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional, List, Tuple
 import os.path
+import re
 import requests
 import json
 import audio
@@ -91,6 +92,32 @@ def get_sender_name(sender_jid: str) -> str:
         if 'conn' in locals():
             conn.close()
 
+def resolve_mentions(content: str) -> str:
+    """Replace "@<phone number>" mentions with "@<contact name>" when the contact is known."""
+    if not content or '@' not in content:
+        return content
+    try:
+        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        cursor = conn.cursor()
+
+        def replace(match: re.Match) -> str:
+            cursor.execute("SELECT name FROM chats WHERE jid = ? LIMIT 1", (f"{match.group(1)}@s.whatsapp.net",))
+            result = cursor.fetchone()
+            # Chats without a known name store the bare number as their name
+            if result and result[0] and result[0] != match.group(1):
+                return f"@{result[0]}"
+            # The user's own number has no chat of its own; it appears as the sender of their messages
+            cursor.execute("SELECT 1 FROM messages WHERE is_from_me = 1 AND sender = ? LIMIT 1", (match.group(1),))
+            return "@Me" if cursor.fetchone() else match.group(0)
+
+        return re.sub(r'@(\d{6,})', replace, content)
+    except sqlite3.Error as e:
+        print(f"Database error while resolving mentions: {e}")
+        return content
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
 def format_message(message: Message, show_chat_info: bool = True) -> None:
     """Print a single message with consistent formatting."""
     output = ""
@@ -106,7 +133,7 @@ def format_message(message: Message, show_chat_info: bool = True) -> None:
     
     try:
         sender_name = get_sender_name(message.sender) if not message.is_from_me else "Me"
-        output += f"From: {sender_name}: {content_prefix}{message.content}\n"
+        output += f"From: {sender_name}: {content_prefix}{resolve_mentions(message.content)}\n"
     except Exception as e:
         print(f"Error formatting message: {e}")
     return output
@@ -622,17 +649,19 @@ def get_direct_chat_by_contact(sender_phone_number: str) -> Optional[Chat]:
         if 'conn' in locals():
             conn.close()
 
-def send_message(recipient: str, message: str) -> Tuple[bool, str]:
+def send_message(recipient: str, message: str, mentions: Optional[List[str]] = None) -> Tuple[bool, str]:
     try:
         # Validate input
         if not recipient:
             return False, "Recipient must be provided"
-        
+
         url = f"{WHATSAPP_API_BASE_URL}/send"
         payload = {
             "recipient": recipient,
             "message": message,
         }
+        if mentions:
+            payload["mentions"] = mentions
         
         response = requests.post(url, json=payload)
         

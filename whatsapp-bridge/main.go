@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -199,11 +200,12 @@ type SendMessageResponse struct {
 type SendMessageRequest struct {
 	Recipient string `json:"recipient"`
 	Message   string `json:"message"`
-	MediaPath string `json:"media_path,omitempty"`
+	MediaPath string   `json:"media_path,omitempty"`
+	Mentions  []string `json:"mentions,omitempty"`
 }
 
 // Function to send a WhatsApp message
-func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message string, mediaPath string) (bool, string) {
+func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message string, mediaPath string, mentions []string) (bool, string) {
 	if !client.IsConnected() {
 		return false, "Not connected to WhatsApp"
 	}
@@ -357,6 +359,20 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 				FileLength:    &resp.FileLength,
 			}
 		}
+	} else if len(mentions) > 0 {
+		// Mentions need an extended text message whose context lists the mentioned JIDs;
+		// the text itself must contain "@<phone number>" for each of them
+		mentionedJIDs := make([]string, 0, len(mentions))
+		for _, mention := range mentions {
+			if !strings.Contains(mention, "@") {
+				mention += "@" + types.DefaultUserServer
+			}
+			mentionedJIDs = append(mentionedJIDs, mention)
+		}
+		msg.ExtendedTextMessage = &waProto.ExtendedTextMessage{
+			Text:        proto.String(message),
+			ContextInfo: &waProto.ContextInfo{MentionedJID: mentionedJIDs},
+		}
 	} else {
 		msg.Conversation = proto.String(message)
 	}
@@ -410,7 +426,13 @@ func extractMediaInfo(msg *waProto.Message) (mediaType string, filename string, 
 
 // Handle regular incoming messages with media support
 func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *events.Message, logger waLog.Logger) {
-	// Save message to database
+	// Save message to database, using phone-number JIDs instead of LIDs so chats aren't split
+	msg.Info.Chat = resolveLID(client, msg.Info.Chat)
+	if msg.Info.Sender.Server == types.HiddenUserServer && msg.Info.SenderAlt.Server == types.DefaultUserServer {
+		msg.Info.Sender = msg.Info.SenderAlt
+	} else {
+		msg.Info.Sender = resolveLID(client, msg.Info.Sender)
+	}
 	chatJID := msg.Info.Chat.String()
 	sender := msg.Info.Sender.User
 
@@ -424,7 +446,7 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 	}
 
 	// Extract text content
-	content := extractTextContent(msg.Message)
+	content := resolveLIDMentions(client, extractTextContent(msg.Message))
 
 	// Extract media info
 	mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength := extractMediaInfo(msg.Message)
@@ -641,7 +663,7 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 	}
 
 	// Download the media using whatsmeow client
-	mediaData, err := client.Download(downloader)
+	mediaData, err := client.Download(context.Background(), downloader)
 	if err != nil {
 		return false, "", "", "", fmt.Errorf("failed to download media: %v", err)
 	}
@@ -706,7 +728,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 		fmt.Println("Received request to send message", req.Message, req.MediaPath)
 
 		// Send the message
-		success, message := sendWhatsAppMessage(client, req.Recipient, req.Message, req.MediaPath)
+		success, message := sendWhatsAppMessage(client, req.Recipient, req.Message, req.MediaPath, req.Mentions)
 		fmt.Println("Message sent", success, message)
 		// Set response headers
 		w.Header().Set("Content-Type", "application/json")
@@ -791,6 +813,16 @@ func main() {
 	logger := waLog.Stdout("Client", "INFO", true)
 	logger.Infof("Starting WhatsApp client...")
 
+	// Always use the store/ next to the binary (where the MCP server reads it),
+	// regardless of the directory the bridge is launched from
+	if exe, err := os.Executable(); err == nil {
+		if exe, err = filepath.EvalSymlinks(exe); err == nil {
+			if err := os.Chdir(filepath.Dir(exe)); err != nil {
+				logger.Warnf("Failed to change to the bridge directory: %v", err)
+			}
+		}
+	}
+
 	// Create database connection for storing session data
 	dbLog := waLog.Stdout("Database", "INFO", true)
 
@@ -800,14 +832,14 @@ func main() {
 		return
 	}
 
-	container, err := sqlstore.New("sqlite3", "file:store/whatsapp.db?_foreign_keys=on", dbLog)
+	container, err := sqlstore.New(context.Background(), "sqlite3", "file:store/whatsapp.db?_foreign_keys=on", dbLog)
 	if err != nil {
 		logger.Errorf("Failed to connect to database: %v", err)
 		return
 	}
 
 	// Get device store - This contains session information
-	deviceStore, err := container.GetFirstDevice()
+	deviceStore, err := container.GetFirstDevice(context.Background())
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// No device exists, create one
@@ -903,6 +935,11 @@ func main() {
 		return
 	}
 
+	// Merge chats stored under LIDs into their phone-number chats
+	if err := migrateLIDChats(client, messageStore, logger); err != nil {
+		logger.Warnf("Failed to migrate LID chats: %v", err)
+	}
+
 	fmt.Println("\n✓ Connected to WhatsApp! Type 'help' for commands.")
 
 	// Start REST API server
@@ -973,7 +1010,7 @@ func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types
 
 		// If we didn't get a name, try group info
 		if name == "" {
-			groupInfo, err := client.GetGroupInfo(jid)
+			groupInfo, err := client.GetGroupInfo(context.Background(), jid)
 			if err == nil && groupInfo.Name != "" {
 				name = groupInfo.Name
 			} else {
@@ -988,7 +1025,7 @@ func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types
 		logger.Infof("Getting name for contact: %s", chatJID)
 
 		// Just use contact info (full name)
-		contact, err := client.Store.Contacts.GetContact(jid)
+		contact, err := client.Store.Contacts.GetContact(context.Background(), jid)
 		if err == nil && contact.FullName != "" {
 			name = contact.FullName
 		} else if sender != "" {
@@ -1006,6 +1043,152 @@ func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types
 }
 
 // Handle history sync events
+// resolveLID maps a LID (hidden user) JID to its phone-number JID when the mapping is known.
+// Other JIDs, and LIDs without a known mapping, are returned unchanged (minus device info).
+func resolveLID(client *whatsmeow.Client, jid types.JID) types.JID {
+	jid = jid.ToNonAD()
+	if jid.Server != types.HiddenUserServer {
+		return jid
+	}
+	pn, err := client.Store.LIDs.GetPNForLID(context.Background(), jid)
+	if err != nil || pn.IsEmpty() {
+		return jid
+	}
+	return pn.ToNonAD()
+}
+
+// lidMentionPattern matches "@<digits>" mentions, which WhatsApp now writes using LIDs
+var lidMentionPattern = regexp.MustCompile(`@(\d{6,})`)
+
+// resolveLIDMentions rewrites "@<lid>" mentions in message text to "@<phone number>" when the mapping is known
+func resolveLIDMentions(client *whatsmeow.Client, content string) string {
+	if !strings.Contains(content, "@") {
+		return content
+	}
+	return lidMentionPattern.ReplaceAllStringFunc(content, func(mention string) string {
+		pn, err := client.Store.LIDs.GetPNForLID(context.Background(), types.NewJID(mention[1:], types.HiddenUserServer))
+		if err != nil || pn.IsEmpty() {
+			return mention
+		}
+		return "@" + pn.User
+	})
+}
+
+// migrateLIDChats moves messages stored under LID chats and LID senders to their phone-number equivalents
+func migrateLIDChats(client *whatsmeow.Client, messageStore *MessageStore, logger waLog.Logger) error {
+	ctx := context.Background()
+
+	rows, err := messageStore.db.Query("SELECT jid FROM chats WHERE jid LIKE '%@" + types.HiddenUserServer + "'")
+	if err != nil {
+		return err
+	}
+	var lidChats []string
+	for rows.Next() {
+		var jid string
+		if err := rows.Scan(&jid); err == nil {
+			lidChats = append(lidChats, jid)
+		}
+	}
+	rows.Close()
+
+	for _, lidChat := range lidChats {
+		lid, err := types.ParseJID(lidChat)
+		if err != nil {
+			continue
+		}
+		pn := resolveLID(client, lid)
+		if pn.Server != types.DefaultUserServer {
+			continue
+		}
+		pnChat := pn.String()
+		name := GetChatName(client, messageStore, pn, pnChat, nil, "", logger)
+
+		tx, err := messageStore.db.Begin()
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(`INSERT INTO chats (jid, name, last_message_time)
+			SELECT ?, ?, last_message_time FROM chats WHERE jid = ?
+			ON CONFLICT(jid) DO UPDATE SET last_message_time = MAX(chats.last_message_time, excluded.last_message_time)`,
+			pnChat, name, lidChat)
+		if err == nil {
+			_, err = tx.Exec("UPDATE OR IGNORE messages SET chat_jid = ? WHERE chat_jid = ?", pnChat, lidChat)
+		}
+		if err == nil {
+			_, err = tx.Exec("DELETE FROM messages WHERE chat_jid = ?", lidChat)
+		}
+		if err == nil {
+			_, err = tx.Exec("DELETE FROM chats WHERE jid = ?", lidChat)
+		}
+		if err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to merge %s into %s: %v", lidChat, pnChat, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		logger.Infof("Merged LID chat %s into %s", lidChat, pnChat)
+	}
+
+	// Senders are stored as the bare user part; rewrite those that are known LIDs
+	rows, err = messageStore.db.Query("SELECT DISTINCT sender FROM messages WHERE is_from_me = 0")
+	if err != nil {
+		return err
+	}
+	var senders []string
+	for rows.Next() {
+		var sender string
+		if err := rows.Scan(&sender); err == nil && sender != "" {
+			senders = append(senders, sender)
+		}
+	}
+	rows.Close()
+
+	for _, sender := range senders {
+		lid := types.NewJID(sender, types.HiddenUserServer)
+		if parsed, err := types.ParseJID(sender); err == nil && parsed.Server == types.HiddenUserServer {
+			lid = parsed.ToNonAD()
+		}
+		pn, err := client.Store.LIDs.GetPNForLID(ctx, lid)
+		if err != nil || pn.IsEmpty() {
+			continue
+		}
+		if _, err := messageStore.db.Exec("UPDATE messages SET sender = ? WHERE sender = ?", pn.User, sender); err != nil {
+			return err
+		}
+	}
+
+	// Rewrite LID mentions in already stored message text
+	rows, err = messageStore.db.Query("SELECT id, chat_jid, content FROM messages WHERE content LIKE '%@%'")
+	if err != nil {
+		return err
+	}
+	type mentionUpdate struct{ id, chatJID, content string }
+	var updates []mentionUpdate
+	for rows.Next() {
+		var u mentionUpdate
+		if err := rows.Scan(&u.id, &u.chatJID, &u.content); err != nil {
+			continue
+		}
+		if resolved := resolveLIDMentions(client, u.content); resolved != u.content {
+			u.content = resolved
+			updates = append(updates, u)
+		}
+	}
+	rows.Close()
+
+	for _, u := range updates {
+		if _, err := messageStore.db.Exec("UPDATE messages SET content = ? WHERE id = ? AND chat_jid = ?", u.content, u.id, u.chatJID); err != nil {
+			return err
+		}
+	}
+	if len(updates) > 0 {
+		logger.Infof("Resolved LID mentions in %d messages", len(updates))
+	}
+
+	return nil
+}
+
 func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, historySync *events.HistorySync, logger waLog.Logger) {
 	fmt.Printf("Received history sync event with %d conversations\n", len(historySync.Data.Conversations))
 
@@ -1016,14 +1199,14 @@ func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 			continue
 		}
 
-		chatJID := *conversation.ID
-
 		// Try to parse the JID
-		jid, err := types.ParseJID(chatJID)
+		jid, err := types.ParseJID(*conversation.ID)
 		if err != nil {
-			logger.Warnf("Failed to parse JID %s: %v", chatJID, err)
+			logger.Warnf("Failed to parse JID %s: %v", *conversation.ID, err)
 			continue
 		}
+		jid = resolveLID(client, jid)
+		chatJID := jid.String()
 
 		// Get appropriate chat name by passing the history sync conversation directly
 		name := GetChatName(client, messageStore, jid, chatJID, conversation, "", logger)
@@ -1062,6 +1245,7 @@ func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 						content = ext.GetText()
 					}
 				}
+				content = resolveLIDMentions(client, content)
 
 				// Extract media info
 				var mediaType, filename, url string
@@ -1087,11 +1271,22 @@ func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 					if msg.Message.Key.FromMe != nil {
 						isFromMe = *msg.Message.Key.FromMe
 					}
-					if !isFromMe && msg.Message.Key.Participant != nil && *msg.Message.Key.Participant != "" {
-						sender = *msg.Message.Key.Participant
+					// Group senders may come in the key or, in newer history syncs, in the message info itself
+					participant := msg.Message.Key.GetParticipant()
+					if participant == "" {
+						participant = msg.Message.GetParticipant()
+					}
+					if !isFromMe && participant != "" {
+						sender = participant
+						if participantJID, err := types.ParseJID(participant); err == nil {
+							sender = resolveLID(client, participantJID).User
+						}
 					} else if isFromMe {
 						sender = client.Store.ID.User
 					} else {
+						if jid.Server == types.GroupServer {
+							logger.Warnf("No participant for group message %s in %s", msg.Message.Key.GetID(), chatJID)
+						}
 						sender = jid.User
 					}
 				} else {
