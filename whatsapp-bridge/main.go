@@ -244,8 +244,8 @@ type SendMessageResponse struct {
 
 // SendMessageRequest represents the request body for the send message API
 type SendMessageRequest struct {
-	Recipient string `json:"recipient"`
-	Message   string `json:"message"`
+	Recipient string   `json:"recipient"`
+	Message   string   `json:"message"`
 	MediaPath string   `json:"media_path,omitempty"`
 	Mentions  []string `json:"mentions,omitempty"`
 }
@@ -483,8 +483,54 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 	return true, fmt.Sprintf("Message sent to %s", recipient)
 }
 
-// Extract media info from a message
-func extractMediaInfo(msg *waProto.Message) (mediaType string, filename string, url string, mediaKey []byte, fileSHA256 []byte, fileEncSHA256 []byte, fileLength uint64) {
+// legacyMediaFilename matches the filenames generated before they included the message ID,
+// which used the time the bridge processed the message rather than the message's own time
+var legacyMediaFilename = regexp.MustCompile(`^(image|video|audio|document)_\d{8}_\d{6}(\.(jpg|mp4|ogg))?$`)
+
+// migrateMediaFilenames renames stored media that still has a legacy generated filename to
+// the current "<type>_<message time>_<ID suffix>" scheme, so files no longer collide on download
+func migrateMediaFilenames(messageStore *MessageStore, logger waLog.Logger) error {
+	rows, err := messageStore.db.Query("SELECT id, chat_jid, timestamp, filename FROM messages WHERE media_type != '' AND filename != ''")
+	if err != nil {
+		return err
+	}
+	type rename struct{ id, chatJID, filename string }
+	var renames []rename
+	for rows.Next() {
+		var id, chatJID, filename string
+		var timestamp time.Time
+		if err := rows.Scan(&id, &chatJID, &timestamp, &filename); err != nil {
+			continue
+		}
+		match := legacyMediaFilename.FindStringSubmatch(filename)
+		if match == nil {
+			continue
+		}
+		idSuffix := id
+		if len(idSuffix) > 8 {
+			idSuffix = idSuffix[len(idSuffix)-8:]
+		}
+		renamed := match[1] + "_" + timestamp.Local().Format("20060102_150405") + "_" + idSuffix + match[2]
+		renames = append(renames, rename{id, chatJID, renamed})
+	}
+	rows.Close()
+
+	for _, r := range renames {
+		if _, err := messageStore.db.Exec("UPDATE messages SET filename = ? WHERE id = ? AND chat_jid = ?", r.filename, r.id, r.chatJID); err != nil {
+			return err
+		}
+	}
+	if len(renames) > 0 {
+		logger.Infof("Renamed %d media files to message-time filenames", len(renames))
+	}
+	return nil
+}
+
+// Extract media info from a message.
+// Generated filenames use the message's own timestamp plus a suffix of its ID, so that
+// media replayed during history sync (dozens per second) neither gets the sync time as
+// its name nor collides with, and overwrites, other files saved in the same second.
+func extractMediaInfo(msg *waProto.Message, msgID string, msgTime time.Time) (mediaType string, filename string, url string, mediaKey []byte, fileSHA256 []byte, fileEncSHA256 []byte, fileLength uint64) {
 	// Same envelopes as in extractTextContent: a document sent with a caption
 	// arrives as DocumentWithCaptionMessage, and without unwrapping it would be
 	// stored as a message with no attachment at all.
@@ -493,21 +539,27 @@ func extractMediaInfo(msg *waProto.Message) (mediaType string, filename string, 
 		return "", "", "", nil, nil, nil, 0
 	}
 
+	idSuffix := msgID
+	if len(idSuffix) > 8 {
+		idSuffix = idSuffix[len(idSuffix)-8:]
+	}
+	stamp := msgTime.Local().Format("20060102_150405") + "_" + idSuffix
+
 	// Check for image message
 	if img := msg.GetImageMessage(); img != nil {
-		return "image", "image_" + time.Now().Format("20060102_150405") + ".jpg",
+		return "image", "image_" + stamp + ".jpg",
 			img.GetURL(), img.GetMediaKey(), img.GetFileSHA256(), img.GetFileEncSHA256(), img.GetFileLength()
 	}
 
 	// Check for video message
 	if vid := msg.GetVideoMessage(); vid != nil {
-		return "video", "video_" + time.Now().Format("20060102_150405") + ".mp4",
+		return "video", "video_" + stamp + ".mp4",
 			vid.GetURL(), vid.GetMediaKey(), vid.GetFileSHA256(), vid.GetFileEncSHA256(), vid.GetFileLength()
 	}
 
 	// Check for audio message
 	if aud := msg.GetAudioMessage(); aud != nil {
-		return "audio", "audio_" + time.Now().Format("20060102_150405") + ".ogg",
+		return "audio", "audio_" + stamp + ".ogg",
 			aud.GetURL(), aud.GetMediaKey(), aud.GetFileSHA256(), aud.GetFileEncSHA256(), aud.GetFileLength()
 	}
 
@@ -515,7 +567,7 @@ func extractMediaInfo(msg *waProto.Message) (mediaType string, filename string, 
 	if doc := msg.GetDocumentMessage(); doc != nil {
 		filename := doc.GetFileName()
 		if filename == "" {
-			filename = "document_" + time.Now().Format("20060102_150405")
+			filename = "document_" + stamp
 		}
 		return "document", filename,
 			doc.GetURL(), doc.GetMediaKey(), doc.GetFileSHA256(), doc.GetFileEncSHA256(), doc.GetFileLength()
@@ -549,7 +601,7 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 	content := resolveLIDMentions(client, extractTextContent(msg.Message))
 
 	// Extract media info
-	mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength := extractMediaInfo(msg.Message)
+	mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength := extractMediaInfo(msg.Message, msg.Info.ID, msg.Info.Timestamp)
 
 	// Skip if there's no content and no media
 	if content == "" && mediaType == "" {
@@ -1054,6 +1106,11 @@ func main() {
 		logger.Warnf("Failed to migrate LID chats: %v", err)
 	}
 
+	// Rename media stored with the old sync-time filenames
+	if err := migrateMediaFilenames(messageStore, logger); err != nil {
+		logger.Warnf("Failed to migrate media filenames: %v", err)
+	}
+
 	fmt.Println("\n✓ Connected to WhatsApp! Type 'help' for commands.")
 
 	// Start REST API server
@@ -1362,7 +1419,7 @@ func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 				var fileLength uint64
 
 				if msg.Message.Message != nil {
-					mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength = extractMediaInfo(msg.Message.Message)
+					mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength = extractMediaInfo(msg.Message.Message, msg.Message.GetKey().GetID(), time.Unix(int64(msg.Message.GetMessageTimestamp()), 0))
 				}
 
 				// Log the message content for debugging

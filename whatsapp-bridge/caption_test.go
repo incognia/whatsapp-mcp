@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 )
@@ -102,7 +103,7 @@ func TestExtractMediaInfoUnwraps(t *testing.T) {
 		}},
 	}}
 
-	mediaType, _, _, _, _, _, fileLength := extractMediaInfo(msg)
+	mediaType, _, _, _, _, _, fileLength := extractMediaInfo(msg, "3EB0ABCDEF123456", time.Unix(0, 0))
 	if mediaType != "image" {
 		t.Errorf("mediaType = %q, want %q", mediaType, "image")
 	}
