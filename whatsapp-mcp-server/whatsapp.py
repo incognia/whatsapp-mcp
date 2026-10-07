@@ -456,6 +456,28 @@ def get_message_context(
             conn.close()
 
 
+def _last_message_sql(chat_filter: str = "", include: bool = True) -> Tuple[str, str, str]:
+    """SQL pieces that attach each chat's newest stored message.
+
+    Returns (cte, columns, join) to splice into a query over `chats` aliased as `c`. The last
+    message is the one with the latest timestamp (ties: latest inserted), picked with a window
+    function so every chat yields at most one row. `chat_filter` narrows the CTE (e.g.
+    "WHERE chat_jid = ?") for single-chat lookups; its parameters come before the query's own.
+    Without `include`, the columns are NULL and no join is made.
+    """
+    if not include:
+        return "", "NULL, NULL, NULL", ""
+    cte = f"""
+        WITH last_messages AS (
+            SELECT chat_jid, content, sender, is_from_me,
+                   ROW_NUMBER() OVER (PARTITION BY chat_jid ORDER BY timestamp DESC, rowid DESC) AS rn
+            FROM messages
+            {chat_filter}
+        )
+    """
+    return cte, "lm.content, lm.sender, lm.is_from_me", "LEFT JOIN last_messages lm ON lm.chat_jid = c.jid AND lm.rn = 1"
+
+
 def list_chats(
     query: Optional[str] = None,
     limit: int = 20,
@@ -473,30 +495,23 @@ def list_chats(
         conn = sqlite3.connect(MESSAGES_DB_PATH)
         cursor = conn.cursor()
         
-        # Build base query; without the messages join the last-message columns are NULL
-        last_message_columns = (
-            "messages.content, messages.sender, messages.is_from_me"
-            if include_last_message else "NULL, NULL, NULL"
-        )
+        # Build base query with each chat's newest stored message (NULL columns when not wanted)
+        cte, last_message_columns, last_message_join = _last_message_sql(include=include_last_message)
         query_parts = [f"""
+            {cte}
             SELECT
-                chats.jid,
-                chats.name,
-                chats.last_message_time,
+                c.jid,
+                c.name,
+                c.last_message_time,
                 {last_message_columns}
-            FROM chats
+            FROM chats c
+            {last_message_join}
         """]
-        
-        if include_last_message:
-            query_parts.append("""
-                LEFT JOIN messages ON chats.jid = messages.chat_jid 
-                AND chats.last_message_time = messages.timestamp
-            """)
-            
+
         params = []
 
         # Add sorting
-        order_by = "chats.last_message_time DESC" if sort_by == "last_active" else "chats.name"
+        order_by = "c.last_message_time DESC" if sort_by == "last_active" else "c.name"
         query_parts.append(f"ORDER BY {order_by}")
 
         offset = page * limit
@@ -715,26 +730,21 @@ def get_chat(chat_jid: str, include_last_message: bool = True) -> Optional[Chat]
         conn = sqlite3.connect(MESSAGES_DB_PATH)
         cursor = conn.cursor()
         
-        query = """
-            SELECT 
+        cte, last_message_columns, last_message_join = _last_message_sql("WHERE chat_jid = ?", include_last_message)
+        query = f"""
+            {cte}
+            SELECT
                 c.jid,
                 c.name,
                 c.last_message_time,
-                m.content as last_message,
-                m.sender as last_sender,
-                m.is_from_me as last_is_from_me
+                {last_message_columns}
             FROM chats c
+            {last_message_join}
+            WHERE c.jid = ?
         """
-        
-        if include_last_message:
-            query += """
-                LEFT JOIN messages m ON c.jid = m.chat_jid 
-                AND c.last_message_time = m.timestamp
-            """
-            
-        query += " WHERE c.jid = ?"
-        
-        cursor.execute(query, (chat_jid,))
+        params = (chat_jid, chat_jid) if include_last_message else (chat_jid,)
+
+        cursor.execute(query, params)
         chat_data = cursor.fetchone()
         
         if not chat_data:
@@ -763,20 +773,20 @@ def get_direct_chat_by_contact(sender_phone_number: str) -> Optional[Chat]:
         conn = sqlite3.connect(MESSAGES_DB_PATH)
         cursor = conn.cursor()
         
-        cursor.execute("""
-            SELECT 
+        pattern = f"%{sender_phone_number}%"
+        cte, last_message_columns, last_message_join = _last_message_sql("WHERE chat_jid LIKE ?")
+        cursor.execute(f"""
+            {cte}
+            SELECT
                 c.jid,
                 c.name,
                 c.last_message_time,
-                m.content as last_message,
-                m.sender as last_sender,
-                m.is_from_me as last_is_from_me
+                {last_message_columns}
             FROM chats c
-            LEFT JOIN messages m ON c.jid = m.chat_jid 
-                AND c.last_message_time = m.timestamp
+            {last_message_join}
             WHERE c.jid LIKE ? AND c.jid NOT LIKE '%@g.us'
             LIMIT 1
-        """, (f"%{sender_phone_number}%",))
+        """, (pattern, pattern))
         
         chat_data = cursor.fetchone()
         

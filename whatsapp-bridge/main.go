@@ -114,6 +114,13 @@ func (store *MessageStore) StoreChat(jid, name string, lastMessageTime time.Time
 	return err
 }
 
+// EnsureChat creates a chat if it does not exist yet, leaving an existing chat's name and
+// last message time untouched
+func (store *MessageStore) EnsureChat(jid, name string) error {
+	_, err := store.db.Exec("INSERT OR IGNORE INTO chats (jid, name) VALUES (?, ?)", jid, name)
+	return err
+}
+
 // Store a message in the database
 func (store *MessageStore) StoreMessage(id, chatJID, sender, content string, timestamp time.Time, isFromMe bool,
 	mediaType, filename, url string, mediaKey, fileSHA256, fileEncSHA256 []byte, fileLength uint64) error {
@@ -538,6 +545,23 @@ var legacyMediaFilename = regexp.MustCompile(`^(image|video|audio|document)_\d{8
 
 // migrateMediaFilenames renames stored media that still has a legacy generated filename to
 // the current "<type>_<message time>_<ID suffix>" scheme, so files no longer collide on download
+// repairChatLastMessageTimes sets the last message time of every chat that has stored
+// messages to the time of its newest one, undoing drift left by events that moved the chat
+// without being stored. Chats without stored messages keep their time.
+func repairChatLastMessageTimes(messageStore *MessageStore, logger waLog.Logger) error {
+	result, err := messageStore.db.Exec(`
+		UPDATE chats SET last_message_time = (SELECT MAX(timestamp) FROM messages WHERE chat_jid = chats.jid)
+		WHERE EXISTS (SELECT 1 FROM messages WHERE chat_jid = chats.jid)
+		  AND last_message_time IS NOT (SELECT MAX(timestamp) FROM messages WHERE chat_jid = chats.jid)`)
+	if err != nil {
+		return err
+	}
+	if repaired, err := result.RowsAffected(); err == nil && repaired > 0 {
+		logger.Infof("Repaired the last message time of %d chats", repaired)
+	}
+	return nil
+}
+
 func migrateMediaFilenames(messageStore *MessageStore, logger waLog.Logger) error {
 	rows, err := messageStore.db.Query("SELECT id, chat_jid, timestamp, filename FROM messages WHERE media_type != '' AND filename != ''")
 	if err != nil {
@@ -640,21 +664,25 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 	// Get appropriate chat name (pass nil for conversation since we don't have one for regular messages)
 	name := GetChatName(client, messageStore, msg.Info.Chat, chatJID, nil, sender, logger)
 
-	// Update chat in database with the message timestamp (keeps last message time updated)
-	err := messageStore.StoreChat(chatJID, name, msg.Info.Timestamp)
-	if err != nil {
-		logger.Warnf("Failed to store chat: %v", err)
-	}
-
 	// Extract text content
 	content := resolveLIDMentions(client, extractTextContent(msg.Message))
 
 	// Extract media info
 	mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength := extractMediaInfo(msg.Message, msg.Info.ID, msg.Info.Timestamp)
 
-	// Skip if there's no content and no media
+	// Events that are not stored (reactions, protocol messages, ...) must not move the chat's
+	// last message time; they only make sure the chat exists
 	if content == "" && mediaType == "" {
+		if err := messageStore.EnsureChat(chatJID, name); err != nil {
+			logger.Warnf("Failed to store chat: %v", err)
+		}
 		return
+	}
+
+	// Update chat in database with the message timestamp (keeps last message time updated)
+	err := messageStore.StoreChat(chatJID, name, msg.Info.Timestamp)
+	if err != nil {
+		logger.Warnf("Failed to store chat: %v", err)
 	}
 
 	// Store message in database
@@ -1158,6 +1186,11 @@ func main() {
 	// Rename media stored with the old sync-time filenames
 	if err := migrateMediaFilenames(messageStore, logger); err != nil {
 		logger.Warnf("Failed to migrate media filenames: %v", err)
+	}
+
+	// Realign chats' last message time with their newest stored message
+	if err := repairChatLastMessageTimes(messageStore, logger); err != nil {
+		logger.Warnf("Failed to repair chat last message times: %v", err)
 	}
 
 	fmt.Println("\n✓ Connected to WhatsApp! Type 'help' for commands.")
