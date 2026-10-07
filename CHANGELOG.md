@@ -5,6 +5,7 @@
 <!-- markdownlint-disable MD013 MD024 MD022 MD032 -->
 ## [2026-10-07] - Project documentation, credits and agent guide
 
+- docs: add `TODO.md`, a roadmap triaged from the 93 open upstream issues: 24 items grouped as bugs, features, performance and tooling, each linked to its issue, plus the issues already handled in this fork and those not taken
 - docs: bring the README up to date with the guardrails and the `go run` fix: list them under "About this fork", explain the untrusted-content markers and the send refusals (`400`, `403`, `429`) in the tools section, describe what the bridge and the MCP server enforce and the start-up lines in the architecture, warn about the `whatsapp-client` binary left by `go build ./...`, and add troubleshooting entries for each guardrail error
 - docs: add to `AGENTS.md` a table of where each concern lives in the bridge and the MCP server, the rules for new sending tools (`sendGuard`, `@writing_tool()`) and new tools returning message text (`wrap_message_text`, `text_of()` in tests), the stray `whatsapp-client` binary, and how to run live checks safely
 - chore: ignore the `whatsapp-bridge/whatsapp-client` binary that `go build ./...` writes
