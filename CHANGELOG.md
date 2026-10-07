@@ -5,6 +5,7 @@
 <!-- markdownlint-disable MD013 MD024 MD022 MD032 -->
 ## [2026-10-06] - Mentions on send and a fixed `store/` path
 
+- docs: archive the completed `quiet-message-content-logs` OpenSpec change and sync its delta into the new main spec `openspec/specs/bridge-logging/spec.md`, leaving no active changes
 - fix: keep message content out of the bridge console by default: live and sent messages log one metadata line (time, direction, chat JID, sender, media type and character count) instead of their text, caption and filename; `/api/send` no longer logs the message text or `media_path`, and a failed send logs only its error category, since the details can carry the local path
 - fix: replace the two per-message history sync lines (`Message content:`, printed even for empty and skipped messages, and `Stored message:`) with one summary line per chat giving the number of messages stored and their time range
 - feat: add the `WHATSAPP_LOG_CONTENT` setting (`true` or `1`), which restores message text and filenames in those lines for local debugging without changing whatsmeow's log level, and report it at start-up
