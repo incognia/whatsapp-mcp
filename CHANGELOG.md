@@ -5,6 +5,7 @@
 <!-- markdownlint-disable MD013 MD024 MD022 MD032 -->
 ## [2026-10-06] - Mentions on send and a fixed `store/` path
 
+- docs: archive the completed `per-chat-history-sync` OpenSpec change and sync its delta into the new main spec `openspec/specs/history-backfill/spec.md`
 - docs: record in the `per-chat-history-sync` design that the phone answers on-demand requests addressed by a one-to-one chat's LID, verified live on a personal chat and a group
 - refactor: move the storage of each history sync conversation into `storeHistoryConversation`, with its client-dependent lookups injected, so history storage and backfill completion are tested without a live WhatsApp connection
 - feat: add `POST /api/history/backfill` to the bridge, which asks the phone for up to 200 messages older than a chat's oldest stored message (an on-demand history sync, sent as a peer message) and answers `202` at once, plus `GET /api/history/backfill` to read the request's status (pending, completed with messages stored and whether more remain, or timed out); LID and phone-number chat JIDs and groups are accepted, and requests are rate-limited per chat and overall (approach from upstream PR #364 and the LukasHaas fork)
