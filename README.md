@@ -133,6 +133,17 @@ WhatsApp only sends message history once, when the device is paired. To load old
 
 Use it sparingly: whatsmeow is an unofficial client, and unusual traffic can put your account at risk. From Claude, use the `request_chat_history` tool.
 
+### Console output
+
+By default the bridge never prints message text, captions, media filenames or local file paths. Each live or sent message logs one metadata line (time, direction, chat, sender, media type and length), and each history sync logs one summary line per chat:
+
+```text
+[2026-10-06 23:40:28] ← 120363000000000000@g.us 5215500000001: text (17 chars)
+History sync for 5215500000002@s.whatsapp.net: stored 19 messages (oldest 2025-11-01 08:00:00, newest 2026-10-06 21:14:03)
+```
+
+To see message content while debugging locally, start the bridge with `WHATSAPP_LOG_CONTENT=true` (or `1`); any other value keeps it off, and the bridge states the setting at start-up. It only adds content to these lines: whatsmeow's own log level does not change.
+
 ## Usage
 
 Once connected, you can interact with your WhatsApp contacts through Claude, leveraging Claude's AI capabilities in your WhatsApp conversations.

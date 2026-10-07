@@ -5,6 +5,11 @@
 <!-- markdownlint-disable MD013 MD024 MD022 MD032 -->
 ## [2026-10-06] - Mentions on send and a fixed `store/` path
 
+- fix: keep message content out of the bridge console by default: live and sent messages log one metadata line (time, direction, chat JID, sender, media type and character count) instead of their text, caption and filename; `/api/send` no longer logs the message text or `media_path`, and a failed send logs only its error category, since the details can carry the local path
+- fix: replace the two per-message history sync lines (`Message content:`, printed even for empty and skipped messages, and `Stored message:`) with one summary line per chat giving the number of messages stored and their time range
+- feat: add the `WHATSAPP_LOG_CONTENT` setting (`true` or `1`), which restores message text and filenames in those lines for local debugging without changing whatsmeow's log level, and report it at start-up
+- docs: document the bridge's console output and `WHATSAPP_LOG_CONTENT` in the README
+- docs: add the `quiet-message-content-logs` OpenSpec change (proposal, new `bridge-logging` delta spec, design and tasks)
 - docs: archive the completed `message-webhooks` OpenSpec change and sync its two deltas into the new main specs `openspec/specs/message-listeners/spec.md` and `openspec/specs/webhook-delivery/spec.md`, leaving no active changes
 - feat: add message listeners that watch live, stored messages by chat, sender, text (`contains`, captions included), RE2 `regex` and `mentions_me` (by phone number or LID), combined with an `or`/`and` match mode, ignoring the account's own messages unless `include_from_me` is set, and never firing for history sync, edits, status updates or messages older than `WEBHOOK_MAX_AGE` (model and match-mode naming from the AdamRussak fork, ADR 0001)
 - feat: deliver each match as a JSON `POST` signed with HMAC-SHA256 over a timestamp and the body, through a bounded queue and fixed worker pool, with up to 4 attempts and timer-based backoff, no redirects and a delivery log that never stores message content

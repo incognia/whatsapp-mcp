@@ -18,6 +18,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal"
@@ -563,12 +564,7 @@ func sendWhatsAppMessage(client *whatsmeow.Client, messageStore *MessageStore, r
 	} else {
 		content := extractTextContent(msg)
 		mediaType, filename, _, _, _, _, _ := extractMediaInfo(msg, resp.ID, timestamp)
-		stamp := timestamp.Format("2006-01-02 15:04:05")
-		if mediaType != "" {
-			fmt.Printf("[%s] → %s: [%s: %s] %s\n", stamp, sender, mediaType, filename, content)
-		} else {
-			fmt.Printf("[%s] → %s: %s\n", stamp, sender, content)
-		}
+		fmt.Println(formatMessageLog(timestamp, true, chatJID.String(), sender, mediaType, filename, content, logContent))
 	}
 
 	return true, fmt.Sprintf("Message sent to %s", recipient)
@@ -743,19 +739,8 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 		// Live, stored messages may fire message listeners (history sync never reaches here)
 		notifyListeners(client, msg, name, content, mediaType, filename)
 
-		// Log message reception
-		timestamp := msg.Info.Timestamp.Format("2006-01-02 15:04:05")
-		direction := "←"
-		if msg.Info.IsFromMe {
-			direction = "→"
-		}
-
-		// Log based on message type
-		if mediaType != "" {
-			fmt.Printf("[%s] %s %s: [%s: %s] %s\n", timestamp, direction, sender, mediaType, filename, content)
-		} else if content != "" {
-			fmt.Printf("[%s] %s %s: %s\n", timestamp, direction, sender, content)
-		}
+		// Log message reception (metadata only unless content logging is on)
+		fmt.Println(formatMessageLog(msg.Info.Timestamp, msg.Info.IsFromMe, chatJID, sender, mediaType, filename, content, logContent))
 	}
 }
 
@@ -1003,11 +988,16 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 			return
 		}
 
-		fmt.Println("Received request to send message", req.Message, req.MediaPath)
+		// Never log the media path; the text only with content logging on
+		if logContent {
+			fmt.Printf("Send request to %s (media=%v, mentions=%d): %s\n", req.Recipient, req.MediaPath != "", len(req.Mentions), req.Message)
+		} else {
+			fmt.Printf("Send request to %s (media=%v, mentions=%d, %d chars)\n", req.Recipient, req.MediaPath != "", len(req.Mentions), utf8.RuneCountInString(req.Message))
+		}
 
 		// Send the message
 		success, message := sendWhatsAppMessage(client, messageStore, req.Recipient, req.Message, req.MediaPath, req.Mentions, logger)
-		fmt.Println("Message sent", success, message)
+		fmt.Printf("Send result: success=%v, %s\n", success, sendResultForLog(message, logContent))
 		// Set response headers
 		w.Header().Set("Content-Type", "application/json")
 
@@ -1152,6 +1142,7 @@ func main() {
 
 	// Message listeners and webhook delivery
 	setupListeners(messageStore, loadWebhookConfig(), 8080, logger)
+	logContent = loadLogContent()
 
 	// Setup event handling for messages and history sync
 	client.AddEventHandler(func(evt interface{}) {
@@ -1515,6 +1506,8 @@ func clientHistoryDeps(client *whatsmeow.Client, messageStore *MessageStore, log
 type historyConversationResult struct {
 	chatJID string
 	stored  int
+	oldest  time.Time
+	newest  time.Time
 }
 
 // storeHistoryConversation stores one history sync conversation. The chat is created first
@@ -1572,9 +1565,6 @@ func storeHistoryConversation(messageStore *MessageStore, conversation *waHistor
 		if msg.Message.Message != nil {
 			mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength = extractMediaInfo(msg.Message.Message, msg.Message.GetKey().GetID(), timestamp)
 		}
-
-		// Log the message content for debugging
-		logger.Infof("Message content: %v, Media Type: %v", content, mediaType)
 
 		// Skip messages with no content and no media
 		if content == "" && mediaType == "" {
@@ -1636,7 +1626,13 @@ func storeHistoryConversation(messageStore *MessageStore, conversation *waHistor
 		if timestamp.After(latest) {
 			latest = timestamp
 		}
-		// Log successful message storage
+		if result.oldest.IsZero() || timestamp.Before(result.oldest) {
+			result.oldest = timestamp
+		}
+		// Per-message lines only with content logging on; otherwise processHistorySync summarises
+		if !logContent {
+			continue
+		}
 		if mediaType != "" {
 			logger.Infof("Stored message: [%s] %s -> %s: [%s: %s] %s",
 				timestamp.Format("2006-01-02 15:04:05"), sender, chatJID, mediaType, filename, content)
@@ -1645,6 +1641,8 @@ func storeHistoryConversation(messageStore *MessageStore, conversation *waHistor
 				timestamp.Format("2006-01-02 15:04:05"), sender, chatJID, content)
 		}
 	}
+
+	result.newest = latest
 
 	// Only stored messages move the chat; StoreChat never moves it backwards
 	if result.stored > 0 {
@@ -1671,6 +1669,10 @@ func processHistorySync(messageStore *MessageStore, data *waHistorySync.HistoryS
 			continue
 		}
 		syncedCount += result.stored
+		if result.stored > 0 {
+			logger.Infof("History sync for %s: stored %d messages (oldest %s, newest %s)",
+				result.chatJID, result.stored, result.oldest.Format("2006-01-02 15:04:05"), result.newest.Format("2006-01-02 15:04:05"))
+		}
 
 		if onDemand && tracker != nil {
 			var oldest time.Time
