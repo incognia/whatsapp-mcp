@@ -120,6 +120,19 @@ This application consists of two main components:
 - The database maintains tables for chats and messages
 - Messages are indexed for efficient searching and retrieval
 
+#### Loading older history
+
+WhatsApp only sends message history once, when the device is paired. To load older messages for one chat later, without unlinking and re-pairing, the bridge can ask your phone for them:
+
+- `POST /api/history/backfill` with `{"chat_jid": "<jid>", "count": 50}` requests up to `count` messages older than the oldest message already stored for that chat (the anchor). It answers `202 Accepted` immediately.
+- Delivery is asynchronous: your phone must be online, and it answers within seconds with an on-demand history sync, which the bridge stores like any other history.
+- `GET /api/history/backfill?chat_jid=<jid>` returns the status of the latest request for that chat: `pending`, `completed` (with `messages_stored` and `more_available`) or `timed_out` after 120 seconds. Status is kept in memory only.
+- `count` must be between 1 and 200 (default 50). Requests are limited to one per chat every 30 seconds (never while one is pending) and one overall every 5 seconds; refusals return `429` with `Retry-After`.
+- A chat with no stored messages cannot be backfilled, because there is no anchor (`404 no_anchor`). Wait for one new message in that chat first.
+- Repeat the request to go further back: each one starts from the new oldest stored message.
+
+Use it sparingly: whatsmeow is an unofficial client, and unusual traffic can put your account at risk. From Claude, use the `request_chat_history` tool.
+
 ## Usage
 
 Once connected, you can interact with your WhatsApp contacts through Claude, leveraging Claude's AI capabilities in your WhatsApp conversations.
@@ -140,6 +153,7 @@ Claude can access the following tools to interact with WhatsApp:
 - **send_file**: Send a file (image, video, raw audio, document) to a specified recipient
 - **send_audio_message**: Send an audio file as a WhatsApp voice message (requires the file to be an .ogg opus file or ffmpeg must be installed)
 - **download_media**: Download media from a WhatsApp message and get the local file path
+- **request_chat_history**: Ask your phone for older messages of one chat (see "Loading older history"); waits up to `wait_seconds` for the answer
 
 ### Media Handling Features
 

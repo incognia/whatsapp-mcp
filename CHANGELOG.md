@@ -5,6 +5,13 @@
 <!-- markdownlint-disable MD013 MD024 MD022 MD032 -->
 ## [2026-10-06] - Mentions on send and a fixed `store/` path
 
+- docs: record in the `per-chat-history-sync` design that the phone answers on-demand requests addressed by a one-to-one chat's LID, verified live on a personal chat and a group
+- refactor: move the storage of each history sync conversation into `storeHistoryConversation`, with its client-dependent lookups injected, so history storage and backfill completion are tested without a live WhatsApp connection
+- feat: add `POST /api/history/backfill` to the bridge, which asks the phone for up to 200 messages older than a chat's oldest stored message (an on-demand history sync, sent as a peer message) and answers `202` at once, plus `GET /api/history/backfill` to read the request's status (pending, completed with messages stored and whether more remain, or timed out); LID and phone-number chat JIDs and groups are accepted, and requests are rate-limited per chat and overall (approach from upstream PR #364 and the LukasHaas fork)
+- feat: add the `request_chat_history` MCP tool, which requests older history for a chat and waits briefly for the phone's answer
+- fix: never move a chat's last message time backwards or blank its name when an older history batch is stored, and move it only to the newest message actually stored from a history sync
+- chore: remove the unused `requestHistorySync` function, which passed a nil anchor and sent the request to the wrong JID
+- docs: document loading older history in the README
 - docs: archive the completed `fix-chat-last-message` OpenSpec change and sync its delta into the new main spec `openspec/specs/chat-last-message/spec.md`
 - docs: add and complete the `fix-chat-last-message` OpenSpec change (proposal, `chat-last-message` delta spec, design with the measured query trade-offs, and tasks)
 - fix: report each chat's newest stored message as its last message in `list_chats`, `get_chat` and `get_direct_chat_by_contact`, using a window function instead of joining on an exact timestamp, so chats with messages no longer show an empty last message and no chat is listed twice; `get_chat` also stops failing when `include_last_message` is false (approach from upstream PR #283 by HalemoGPA, rewritten for speed without an index)

@@ -12,8 +12,11 @@ from whatsapp import (
     send_message as whatsapp_send_message,
     send_file as whatsapp_send_file,
     send_audio_message as whatsapp_audio_voice_message,
-    download_media as whatsapp_download_media
+    download_media as whatsapp_download_media,
+    request_chat_history as whatsapp_request_chat_history,
+    get_chat_history_status as whatsapp_get_chat_history_status
 )
+import time
 
 # Initialize FastMCP server
 mcp = FastMCP("whatsapp")
@@ -256,6 +259,66 @@ def download_media(message_id: str, chat_jid: str) -> Dict[str, Any]:
             "success": False,
             "message": "Failed to download media"
         }
+
+@mcp.tool()
+def request_chat_history(chat_jid: str, count: int = 50, wait_seconds: int = 20) -> Dict[str, Any]:
+    """Load older messages for one chat from the phone (on-demand history backfill).
+
+    Asks the user's phone for up to `count` messages older than the oldest message already
+    stored for the chat. Delivery is asynchronous: the phone answers within seconds when it is
+    online, and the messages are then readable with `list_messages`. Call again to go further
+    back. Use sparingly: this is an unofficial WhatsApp client.
+
+    Limits: count 1-200 (default 50); one request per chat every 30 seconds (and not while one
+    is pending), one request overall every 5 seconds; a chat needs at least one stored message
+    to be used as the starting point.
+
+    Args:
+        chat_jid: Chat JID (person "<number>@s.whatsapp.net", LID "...@lid" or group "...@g.us")
+        count: Number of older messages to ask for (1-200, default 50)
+        wait_seconds: How long to wait for the phone's answer before returning (0-60, default 20)
+
+    Returns:
+        success, status (pending/completed/timed_out), chat_jid, request_jid, count,
+        oldest_known_timestamp, messages_stored, more_available and a message
+    """
+    wait_seconds = max(0, min(60, wait_seconds))
+    result = whatsapp_request_chat_history(chat_jid, count)
+    if not result.get("success"):
+        message = result.get("message", "History request failed")
+        if result.get("http_status") == 429 and result.get("retry_after") is not None:
+            message = f"{message} (retry after {result['retry_after']} seconds)"
+        return {"success": False, "status": result.get("error", "error"), "chat_jid": chat_jid, "message": message}
+
+    status = result
+    deadline = time.monotonic() + wait_seconds
+    while status.get("status") == "pending" and time.monotonic() < deadline:
+        time.sleep(min(2, max(0, deadline - time.monotonic())))
+        polled = whatsapp_get_chat_history_status(result.get("chat_jid", chat_jid))
+        if polled.get("http_status") == 200:
+            status = polled
+
+    state = status.get("status")
+    if state == "completed":
+        message = f"Stored {status.get('messages_stored', 0)} older messages; read them with list_messages."
+        if status.get("more_available"):
+            message += " The phone reports more history; call again to go further back."
+    elif state == "timed_out":
+        message = "The phone did not answer in time (it may be offline). Try again later."
+    else:
+        message = "Requested; the phone has not answered yet. Messages may still arrive; check later with list_messages."
+
+    return {
+        "success": True,
+        "status": state,
+        "chat_jid": status.get("chat_jid", chat_jid),
+        "request_jid": status.get("request_jid") or result.get("request_jid"),
+        "count": status.get("count") or result.get("count"),
+        "oldest_known_timestamp": result.get("oldest_known_timestamp"),
+        "messages_stored": status.get("messages_stored"),
+        "more_available": status.get("more_available"),
+        "message": message,
+    }
 
 if __name__ == "__main__":
     # Initialize and run the server

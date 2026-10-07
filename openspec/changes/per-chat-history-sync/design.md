@@ -64,6 +64,8 @@ Rationale: recent WhatsApp clients key one-to-one chats by LID (history sync con
 
 *Alternative*: always send the phone-number JID (what PR #364 and LukasHaas do, written before LID addressing was widespread). Kept as the fallback. Which form the phone honours is verified manually during implementation (task 6.3); if only the phone-number form works, flipping the preference is a one-line change that does not alter the spec's observable contract beyond `request_jid`.
 
+**Outcome (task 6.3, 2026-10-06):** the LID form works. On the live account, two requests for a one-to-one chat addressed by its LID were answered (44 messages in 0.7 s, then 19 messages after about 50 s), and two group requests were answered by the group JID (47 and 20 messages). The LID default is kept. The phone-number form was not exercised, because forcing it needs a temporary code change and the default already works; it remains the fallback for chats whose LID is unknown.
+
 ### D4. Sending
 
 `client.SendPeerMessage(ctx, client.BuildHistorySyncRequest(info, count))` with a 30-second context. This is the documented route and equals `SendMessage(ctx, ownJID.ToNonAD(), msg, SendRequestExtra{Peer: true})` used by PR #364. LukasHaas' fork omits `Peer: true`, which sends a normal message to one's own number; we do not copy that. Before sending: `client.IsConnected()` and `client.IsLoggedIn()`/`client.Store.ID != nil`, else 503. Send errors map to 502 and the tracker entry is not created.
@@ -112,7 +114,7 @@ No schema change and no data migration. Deploy by rebuilding the bridge and rest
 
 ## Open Questions
 
-- Whether the phone answers more reliably to the LID or the phone-number form of a one-to-one chat (D3); resolved empirically during task 6.3 without changing the spec.
+- ~~Whether the phone answers more reliably to the LID or the phone-number form of a one-to-one chat (D3)~~: resolved in task 6.3; the LID form works (see D3).
 - Whether setting `SupportInlineResponse` / `AccountLid` would make the phone answer inline through `PeerDataOperationRequestResponseMessage` instead of a history sync notification; whatsmeow does not handle such inline answers today, so they stay unset.
 
 ## Credits

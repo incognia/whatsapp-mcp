@@ -954,3 +954,34 @@ def download_media(message_id: str, chat_jid: str) -> Optional[str]:
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
         return None
+
+
+def _backfill_call(method: str, **kwargs) -> Dict:
+    """Call the bridge's history backfill endpoint and return its JSON plus HTTP details.
+
+    Never raises: connection errors and non-JSON answers become `success: False` results.
+    """
+    url = f"{WHATSAPP_API_BASE_URL}/history/backfill"
+    try:
+        response = requests.request(method, url, timeout=35, **kwargs)
+    except requests.RequestException as e:
+        return {"success": False, "message": f"Could not reach the WhatsApp bridge: {e}", "http_status": None}
+    try:
+        result = response.json()
+    except ValueError:
+        result = {"success": False, "message": response.text or f"HTTP {response.status_code}"}
+    result["http_status"] = response.status_code
+    retry_after = response.headers.get("Retry-After")
+    if retry_after is not None:
+        result["retry_after"] = int(retry_after) if retry_after.isdigit() else retry_after
+    return result
+
+
+def request_chat_history(chat_jid: str, count: int = 50) -> Dict:
+    """Ask the bridge to request older history for one chat from the phone."""
+    return _backfill_call("POST", json={"chat_jid": chat_jid, "count": count})
+
+
+def get_chat_history_status(chat_jid: str) -> Dict:
+    """Read the status of the latest history request for one chat."""
+    return _backfill_call("GET", params={"chat_jid": chat_jid})
