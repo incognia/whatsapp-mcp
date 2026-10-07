@@ -19,7 +19,8 @@ This is a maintained fork of [lharries/whatsapp-mcp](https://github.com/lharries
 - Correct last message per chat, and group senders and LID mentions resolved to phone numbers
 - On-demand loading of older history for one chat
 - Message listeners that post matching live messages to a signed webhook
-- Safer defaults: API bound to loopback, media path restrictions, no message content in console logs
+- Prompt injection guardrails enforced by the bridge: session and hidden files are never sent, webhooks stay local unless allowed, third-party text is marked as untrusted, and read-only mode, a send rate limit and a recipient allowlist are available (see [Security](#security))
+- Safer defaults: API bound to loopback, media path restrictions, no message content in console logs, and the same `store/` whether the bridge is built or started with `go run`
 
 Every change is listed in [CHANGELOG.md](./CHANGELOG.md), and the behaviour of each capability is specified under [`openspec/specs/`](./openspec/specs/).
 
@@ -99,13 +100,15 @@ Ask in plain language: "summarise today's messages in the family group", "what d
 - **download_media**: download a message's image, video, document or audio and return its local path
 - **request_chat_history**: ask your phone for older messages of one chat (see "Loading older history")
 
+Read tools return each message's text between `<<message id=…>>` and `<</message id=…>>` markers, and text results start with a one-line reminder that the content is untrusted (see [Security](#security)).
+
 **Sending**
 
 - **send_message**: send text to a phone number or group JID; `mentions` (phone numbers) tags people in a group, with `@<number>` in the text where each tag goes
 - **send_file**: send an image, video, document or raw audio
 - **send_audio_message**: send audio as a playable voice message (`.ogg` Opus, or any format with FFmpeg installed)
 
-Sent messages are stored immediately as your own, so they show up in `list_messages` and `list_chats` straight away.
+Sent messages are stored immediately as your own, so they show up in `list_messages` and `list_chats` straight away. With `WHATSAPP_READ_ONLY` set for the MCP server, these tools and the listener-changing ones are not offered at all; the bridge's guardrails refuse a send with `400` (protected file), `403` (read-only mode or recipient not allowed) or `429` (rate limit), and the tool returns that reason.
 
 **Listeners**
 
@@ -238,8 +241,10 @@ These measures do not stop the model from reading your messages (that is the pur
 
 Two components:
 
-1. **Go bridge** (`whatsapp-bridge/`): connects to WhatsApp, handles linking by QR code, stores chats and messages in SQLite and serves a REST API on `127.0.0.1:8080` for sending, media download, history backfill and listeners.
-2. **Python MCP server** (`whatsapp-mcp-server/`): exposes the MCP tools. It reads the SQLite databases directly (read-only for whatsmeow's store) and calls the bridge's REST API for anything that talks to WhatsApp.
+1. **Go bridge** (`whatsapp-bridge/`): connects to WhatsApp, handles linking by QR code, stores chats and messages in SQLite and serves a REST API on `127.0.0.1:8080` for sending, media download, history backfill and listeners. Every send and listener change goes through it, so it also enforces the guardrails the model cannot override (protected files, read-only mode, rate limit, recipient allowlist, webhook policy).
+2. **Python MCP server** (`whatsapp-mcp-server/`): exposes the MCP tools. It reads the SQLite databases directly (read-only for whatsmeow's store), wraps third-party message text in untrusted-content markers, and calls the bridge's REST API for anything that talks to WhatsApp.
+
+At start-up the bridge prints the `store/` folder in use (`Using store:`), the listener settings, whether message content logging is on, and the send guardrails (`read_only`, `rate_limit`, `allowlist`, never the recipients themselves).
 
 ```text
 Claude ⇄ MCP server ──reads──▶ store/messages.db, store/whatsapp.db
@@ -274,7 +279,7 @@ cd whatsapp-bridge && go vet ./... && go test -race ./...
 cd whatsapp-mcp-server && uv run pytest
 ```
 
-The Python tests build temporary databases from fictitious data; neither suite needs a WhatsApp connection.
+The Python tests build temporary databases from fictitious data; neither suite needs a WhatsApp connection. Build the bridge with `go build -o whatsapp-bridge .`: a plain `go build ./...` writes a `whatsapp-client` binary, named after the Go module, next to the sources.
 
 Changes follow [OpenSpec](https://github.com/Fission-AI/OpenSpec) (spec-driven schema, UK English): each change has a proposal, delta specs, design and tasks under `openspec/changes/`, and is archived into the main specs in `openspec/specs/` once done. Commits follow Conventional Commits, and every change is recorded in `CHANGELOG.md`.
 
@@ -293,6 +298,11 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.
 - **A chat is missing older messages**: load them with `request_chat_history` instead of linking again.
 - **Out of sync beyond repair**: stop the bridge, delete `whatsapp-bridge/store/messages.db` and `whatsapp-bridge/store/whatsapp.db`, and start it again to link from scratch. This loses listeners and any history your phone no longer sends.
 - **uv permission or path errors**: use the full path from `which uv` in your MCP client's configuration.
+- **"sending is disabled (WHATSAPP_READ_ONLY)"** or **"listener changes are disabled"**: the bridge runs in read-only mode; restart it without `WHATSAPP_READ_ONLY` to send.
+- **"send rate limit reached (WHATSAPP_SEND_RATE)"**: wait for the `Retry-After` seconds, or raise or remove the limit.
+- **"recipient is not in WHATSAPP_SEND_ALLOWED"**: add the number or group JID to the allowlist, or unset it.
+- **"Refusing media_path: … hidden path component"** or **"… inside the bridge's store/"**: move the file to an ordinary folder, or add the hidden folder to `WHATSAPP_MEDIA_ROOTS` if you really mean to send from it. The bridge's own `store/` can never be sent.
+- **"webhook_url host … is not local"**, or deliveries failing with **"refused by the webhook URL policy"**: list the webhook's host in `WEBHOOK_ALLOWED_HOSTS` and restart the bridge.
 
 For Claude Desktop integration issues, see the [MCP documentation](https://modelcontextprotocol.io/quickstart/server#claude-for-desktop-integration-issues).
 

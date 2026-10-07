@@ -11,6 +11,19 @@ An MCP server that lets an LLM read and send messages on the user's **personal W
 
 Specs of current behaviour: `openspec/specs/<capability>/spec.md`. Read the relevant spec before changing a capability.
 
+Where the main pieces live:
+
+| Concern | Bridge (`whatsapp-bridge/`) | MCP server (`whatsapp-mcp-server/`) |
+|---|---|---|
+| Send guardrails (read-only, allowlist, rate limit) and `/api/send` | `send_guardrails.go` (`newSendHandler`, `sendGuard`) | read-only tool registration: `writing_tool()` in `main.py` |
+| Protected files | `validateMediaPath` / `checkMediaPath` in `main.go` | |
+| Webhook URL policy and SSRF checks | `webhook_policy.go`, enforced again in `webhook_delivery.go` | |
+| Untrusted-content markers | | `wrap_message_text`, `UNTRUSTED_NOTICE`, server `INSTRUCTIONS` |
+| Store location | `store_dir.go` | `MESSAGES_DB_PATH` in `whatsapp.py` |
+| Console logging | `log_format.go` | |
+| Listeners and deliveries | `listeners.go`, `listeners_api.go`, `webhook_delivery.go`, `webhook_config.go` | listener tools in `main.py` |
+| History backfill | `history_backfill.go` | `request_chat_history` |
+
 ## Commands
 
 ```bash
@@ -46,6 +59,10 @@ Run the relevant suites before saying a change is done, and report failures with
 - History sync and live messages share the same text and media extraction (`extractTextContent`, `extractMediaInfo`); change both paths together.
 - Code that needs a live client takes its lookups as injected dependencies (for example `historyDeps`), so it can be tested without WhatsApp. Follow that pattern.
 - New bridge features go in their own file (`listeners.go`, `log_format.go`, `history_backfill.go`) rather than growing `main.go`.
+- **Any new way to send or to post data out** must go through the bridge's guardrails (`sendGuard`, the webhook URL policy), and any new MCP tool that sends or changes listeners must be registered with `@writing_tool()` so read-only mode hides it.
+- **Any new MCP tool that returns message text** must pass it through `wrap_message_text(message_id, text)` (and start text results with `UNTRUSTED_NOTICE`); in tests, compare the inner text with `text_of()` from `tests/conftest.py`.
+- `go build ./...` without `-o` writes a `whatsapp-client` binary (the module name) into `whatsapp-bridge/`; use `go vet ./...` to check compilation, or `go build -o whatsapp-bridge .`, and never commit that binary.
+- **Live checks** need the user's running bridge stopped first (two processes on one session conflict), or go through the user's own running bridge on `127.0.0.1:8080`. Send test messages only to the user's own chat, with their go-ahead, and probe guardrails with requests that are refused before WhatsApp (for example a `media_path` under a hidden folder in a temporary directory).
 
 ## Workflow
 
