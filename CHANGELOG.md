@@ -5,6 +5,7 @@
 <!-- markdownlint-disable MD013 MD024 MD022 MD032 -->
 ## [2026-10-07] - Project documentation, credits and agent guide
 
+- docs: archive the completed `bridge-store-dir-under-go-run` OpenSpec change and sync its delta into the new main spec `openspec/specs/bridge-store-location/spec.md`, leaving `prompt-injection-guardrails` as the only active change
 - fix: make `go run` use the bridge's real `store/`: under `go run` the bridge now uses its source folder instead of the folder of the executable, which `go run` builds in a temporary folder or, from Go 1.24, reuses from the Go build cache, so it no longer creates an empty store there, shows a new QR code or links a second device; `go run .` inside `whatsapp-bridge/` and `go -C whatsapp-bridge run .` from the repository root both work
 - fix: stop start-up with a clear message recommending `go build` when the bridge runs under `go run` but its source folder cannot be trusted (for example with `-trimpath`), before any database is opened, and print the `store/` folder in use at every start-up
 - docs: explain in the README that `go run` now works, add troubleshooting entries for the `Using store:` line and the new start-up error, and update the store location note in `AGENTS.md`
