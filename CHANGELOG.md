@@ -5,6 +5,7 @@
 <!-- markdownlint-disable MD013 MD024 MD022 MD032 -->
 ## [2026-10-06] - Mentions on send and a fixed `store/` path
 
+- docs: archive the completed `fix-chat-last-message` OpenSpec change and sync its delta into the new main spec `openspec/specs/chat-last-message/spec.md`
 - docs: add and complete the `fix-chat-last-message` OpenSpec change (proposal, `chat-last-message` delta spec, design with the measured query trade-offs, and tasks)
 - fix: report each chat's newest stored message as its last message in `list_chats`, `get_chat` and `get_direct_chat_by_contact`, using a window function instead of joining on an exact timestamp, so chats with messages no longer show an empty last message and no chat is listed twice; `get_chat` also stops failing when `include_last_message` is false (approach from upstream PR #283 by HalemoGPA, rewritten for speed without an index)
 - fix: stop reactions and other events that are not stored from moving a chat's last message time in the bridge, and realign every chat's time with its newest stored message on startup
