@@ -1,15 +1,128 @@
 import sqlite3
 from datetime import datetime
 from dataclasses import dataclass
-from typing import Optional, List, Tuple
+from pathlib import Path
+from typing import Dict, Optional, List, Tuple
 import os.path
 import re
+import unicodedata
 import requests
 import json
 import audio
 
 MESSAGES_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'whatsapp-bridge', 'store', 'messages.db')
+# whatsmeow's own store (contacts and LID map), owned by the bridge: only ever opened read-only
+WHATSMEOW_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'whatsapp-bridge', 'store', 'whatsapp.db')
 WHATSAPP_API_BASE_URL = "http://localhost:8080/api"
+
+CONTACT_SEARCH_LIMIT = 50
+
+# A query made only of digits and phone punctuation is matched against phone numbers
+_PHONE_QUERY = re.compile(r"^[\d\s+\-().]+$")
+
+
+def normalise_text(text: Optional[str]) -> str:
+    """Fold text for matching: strip diacritics, casefold and collapse whitespace.
+
+    "Rubén García" -> "ruben garcia", "Begoña" -> "begona", "Straße" -> "strasse".
+    """
+    if not text:
+        return ""
+    decomposed = unicodedata.normalize("NFKD", text)
+    without_marks = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return " ".join(without_marks.casefold().split())
+
+
+def _query_words(query: Optional[str]) -> List[str]:
+    """Split a query into normalised words; a phone-like query becomes one digits-only word."""
+    if not query or not query.strip():
+        return []
+    if _PHONE_QUERY.match(query) and any(c.isdigit() for c in query):
+        return ["".join(c for c in query if c.isdigit())]
+    return normalise_text(query).split()
+
+
+def _match_rank(words: List[str], haystack: str) -> Optional[int]:
+    """Rank a candidate whose normalised searchable text is `haystack`.
+
+    Returns None when some word does not occur, 0 when every word starts a word of the
+    haystack and 1 when at least one word only matches inside a word.
+    """
+    if not words:
+        return None
+    tokens = haystack.split()
+    rank = 0
+    for word in words:
+        if word not in haystack:
+            return None
+        if not any(token.startswith(word) for token in tokens):
+            rank = 1
+    return rank
+
+
+@dataclass
+class AddressBookEntry:
+    """Names whatsmeow knows for one phone-number JID, merged across its contact rows."""
+    full_name: str = ""
+    first_name: str = ""
+    business_name: str = ""
+    push_name: str = ""
+
+    def names(self) -> List[str]:
+        return [n for n in (self.full_name, self.first_name, self.business_name, self.push_name) if n]
+
+
+def _connect_whatsmeow_db() -> sqlite3.Connection:
+    """Open whatsmeow's database strictly read-only.
+
+    mode=ro never writes and, unlike a plain connect, raises instead of creating a missing file.
+    """
+    uri = Path(WHATSMEOW_DB_PATH).resolve().as_uri() + "?mode=ro"
+    return sqlite3.connect(uri, uri=True, timeout=2)
+
+
+def _load_address_book() -> Dict[str, AddressBookEntry]:
+    """Return whatsmeow's contacts keyed by phone-number JID, with LID rows mapped to phone numbers.
+
+    Unmapped LIDs and non-user JIDs are skipped. On any database error the address book is
+    treated as empty, so callers fall back to the chats in messages.db.
+    """
+    try:
+        conn = _connect_whatsmeow_db()
+        try:
+            lid_to_pn = dict(conn.execute("SELECT lid, pn FROM whatsmeow_lid_map").fetchall())
+            rows = conn.execute(
+                "SELECT their_jid, first_name, full_name, push_name, business_name FROM whatsmeow_contacts"
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error as e:
+        print(f"Address book unavailable, searching chats only: {e}")
+        return {}
+
+    # Phone-number rows first, so their names win over the same person's LID row
+    rows.sort(key=lambda row: 0 if (row[0] or "").endswith("@s.whatsapp.net") else 1)
+
+    book: Dict[str, AddressBookEntry] = {}
+    for their_jid, first_name, full_name, push_name, business_name in rows:
+        user, _, server = (their_jid or "").partition("@")
+        user = user.split(":")[0]
+        if server == "lid":
+            pn = lid_to_pn.get(user)
+            if not pn:
+                continue
+            jid = f"{pn}@s.whatsapp.net"
+        elif server == "s.whatsapp.net":
+            jid = f"{user}@s.whatsapp.net"
+        else:
+            continue
+
+        entry = book.setdefault(jid, AddressBookEntry())
+        entry.full_name = entry.full_name or (full_name or "")
+        entry.first_name = entry.first_name or (first_name or "")
+        entry.business_name = entry.business_name or (business_name or "")
+        entry.push_name = entry.push_name or (push_name or "")
+    return book
 
 @dataclass
 class Message:
@@ -350,20 +463,27 @@ def list_chats(
     include_last_message: bool = True,
     sort_by: str = "last_active"
 ) -> List[Chat]:
-    """Get chats matching the specified criteria."""
+    """Get chats matching the specified criteria.
+
+    A non-blank query keeps chats where every query word, ignoring accents and case, occurs in
+    the chat name, its JID or, for individual chats, its contact's address-book names.
+    """
+    words = _query_words(query)
     try:
         conn = sqlite3.connect(MESSAGES_DB_PATH)
         cursor = conn.cursor()
         
-        # Build base query
-        query_parts = ["""
-            SELECT 
+        # Build base query; without the messages join the last-message columns are NULL
+        last_message_columns = (
+            "messages.content, messages.sender, messages.is_from_me"
+            if include_last_message else "NULL, NULL, NULL"
+        )
+        query_parts = [f"""
+            SELECT
                 chats.jid,
                 chats.name,
                 chats.last_message_time,
-                messages.content as last_message,
-                messages.sender as last_sender,
-                messages.is_from_me as last_is_from_me
+                {last_message_columns}
             FROM chats
         """]
         
@@ -373,27 +493,38 @@ def list_chats(
                 AND chats.last_message_time = messages.timestamp
             """)
             
-        where_clauses = []
         params = []
-        
-        if query:
-            where_clauses.append("(LOWER(chats.name) LIKE LOWER(?) OR chats.jid LIKE ?)")
-            params.extend([f"%{query}%", f"%{query}%"])
-            
-        if where_clauses:
-            query_parts.append("WHERE " + " AND ".join(where_clauses))
-            
+
         # Add sorting
         order_by = "chats.last_message_time DESC" if sort_by == "last_active" else "chats.name"
         query_parts.append(f"ORDER BY {order_by}")
-        
-        # Add pagination
-        offset = (page ) * limit
-        query_parts.append("LIMIT ? OFFSET ?")
-        params.extend([limit, offset])
-        
+
+        offset = page * limit
+        if not words:
+            # Unfiltered: let SQLite paginate
+            query_parts.append("LIMIT ? OFFSET ?")
+            params.extend([limit, offset])
+
         cursor.execute(" ".join(query_parts), tuple(params))
         chats = cursor.fetchall()
+
+        if words:
+            # Filter in Python (SQLite cannot ignore accents), keeping the SQL sort order,
+            # then paginate the matches
+            book = _load_address_book()
+            phone_query = query is not None and _is_phone_query(query)
+            matching = []
+            for row in chats:
+                jid, name = row[0], row[1]
+                if phone_query:
+                    haystack = jid.split("@")[0]
+                else:
+                    entry = book.get(jid) if jid.endswith("@s.whatsapp.net") else None
+                    fields = [name or "", jid.lower()] + (entry.names() if entry else [])
+                    haystack = " ".join(normalise_text(f) for f in fields)
+                if _match_rank(words, haystack) is not None:
+                    matching.append(row)
+            chats = matching[offset:offset + limit]
         
         result = []
         for chat_data in chats:
@@ -417,46 +548,65 @@ def list_chats(
             conn.close()
 
 
+def _is_phone_query(query: str) -> bool:
+    return bool(_PHONE_QUERY.match(query)) and any(c.isdigit() for c in query)
+
+
+def _contact_display_name(jid: str, chat_name: Optional[str], entry: Optional[AddressBookEntry]) -> str:
+    """Pick the name to report: saved full name, chat name (unless it is just the number),
+    first name, business name, profile name, and finally the number itself."""
+    number = jid.split("@")[0]
+    useful_chat_name = chat_name if chat_name and chat_name != number else ""
+    entry = entry or AddressBookEntry()
+    for name in (entry.full_name, useful_chat_name, entry.first_name, entry.business_name, entry.push_name):
+        if name:
+            return name
+    return number
+
+
 def search_contacts(query: str) -> List[Contact]:
-    """Search contacts by name or phone number."""
+    """Search individual chats and the address book by name or phone number.
+
+    Matching ignores accents and case, and every query word must occur (in any order) in one of
+    the contact's names or, for phone-like queries, in its phone number. Groups are excluded.
+    """
+    words = _query_words(query)
+    if not words:
+        return []
+    phone_query = _is_phone_query(query)
+
+    chats: Dict[str, Optional[str]] = {}
     try:
         conn = sqlite3.connect(MESSAGES_DB_PATH)
-        cursor = conn.cursor()
-        
-        # Split query into characters to support partial matching
-        search_pattern = '%' +query + '%'
-        
-        cursor.execute("""
-            SELECT DISTINCT 
-                jid,
-                name
-            FROM chats
-            WHERE 
-                (LOWER(name) LIKE LOWER(?) OR LOWER(jid) LIKE LOWER(?))
-                AND jid NOT LIKE '%@g.us'
-            ORDER BY name, jid
-            LIMIT 50
-        """, (search_pattern, search_pattern))
-        
-        contacts = cursor.fetchall()
-        
-        result = []
-        for contact_data in contacts:
-            contact = Contact(
-                phone_number=contact_data[0].split('@')[0],
-                name=contact_data[1],
-                jid=contact_data[0]
-            )
-            result.append(contact)
-            
-        return result
-        
+        try:
+            for jid, name in conn.execute("SELECT jid, name FROM chats WHERE jid LIKE '%@s.whatsapp.net'"):
+                chats[jid] = name
+        finally:
+            conn.close()
     except sqlite3.Error as e:
         print(f"Database error: {e}")
-        return []
-    finally:
-        if 'conn' in locals():
-            conn.close()
+
+    book = _load_address_book()
+
+    ranked = []
+    for jid in set(chats) | set(book):
+        number = jid.split("@")[0]
+        entry = book.get(jid)
+        if phone_query:
+            haystack = number
+        else:
+            names = list(entry.names()) if entry else []
+            if chats.get(jid):
+                names.append(chats[jid])
+            haystack = " ".join(normalise_text(n) for n in names + [number])
+        rank = _match_rank(words, haystack)
+        if rank is None:
+            continue
+        name = _contact_display_name(jid, chats.get(jid), entry)
+        ranked.append(((rank, 0 if jid in chats else 1, normalise_text(name), jid), Contact(number, name, jid)))
+
+    ranked.sort(key=lambda item: item[0])
+    return [contact for _, contact in ranked[:CONTACT_SEARCH_LIMIT]]
 
 
 def get_contact_chats(jid: str, limit: int = 20, page: int = 0) -> List[Chat]:

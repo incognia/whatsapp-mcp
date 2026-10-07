@@ -21,7 +21,13 @@ mcp = FastMCP("whatsapp")
 @mcp.tool()
 def search_contacts(query: str) -> List[Dict[str, Any]]:
     """Search WhatsApp contacts by name or phone number.
-    
+
+    Searches both individual chats and the phone's whole address book (saved, first, business
+    and profile names), so contacts with no message history are found too. Matching ignores
+    accents and case, and every word must appear in any order ("garcia ruben" finds
+    "Rubén García"). Phone numbers can be partial or formatted ("+52 1 55 1234 5678").
+    Groups are not returned; at most 50 results, best matches first.
+
     Args:
         query: Search term to match against contact names or phone numbers
     """
@@ -80,7 +86,9 @@ def list_chats(
     """Get WhatsApp chats matching specified criteria.
     
     Args:
-        query: Optional search term to filter chats by name or JID
+        query: Optional search term to filter chats. Ignores accents and case; every word must
+            appear, in any order, in the chat name, its JID or, for individual chats, the
+            contact's address-book names (so "maayan" finds a chat stored under a bare number)
         limit: Maximum number of chats to return (default 20)
         page: Page number for pagination (default 0)
         include_last_message: Whether to include the last message in each chat (default True)

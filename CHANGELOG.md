@@ -5,6 +5,11 @@
 <!-- markdownlint-disable MD013 MD024 MD022 MD032 -->
 ## [2026-10-06] - Mentions on send and a fixed `store/` path
 
+- feat: make `search_contacts` search the phone's whole address book (saved, first, business and profile names, read strictly read-only from whatsmeow's store) as well as individual chats, so contacts without message history are found, with LID contacts reported once under their phone number (approach from the LukasHaas fork, upstream PR #343)
+- feat: match contact searches ignoring accents and case, with every word required in any order and partial or formatted phone numbers accepted, ranking word-start matches and contacts with a chat first
+- feat: apply the same matching to the `list_chats` query filter, including a chat's address-book names, and paginate after filtering
+- fix: return chats from `list_chats` when `include_last_message` is false, which previously failed with a missing `messages` column and returned nothing
+- chore: add a pytest suite for the MCP server, with fixtures that build temporary message and contact stores from fictitious data
 - docs: archive the completed `store-sent-messages` OpenSpec change and sync its delta into the new main spec `openspec/specs/outgoing-message-storage/spec.md`, the project's first capability spec
 - chore: ignore `.claude/settings.local.json` in Git, since it holds each user's local Claude Code permissions
 - fix: store messages sent through `/api/send` (text, mentions and media with or without a caption) as the user's own messages and update the chat's last message time, so `list_messages` and `list_chats` show them immediately and `download_media` works on sent files; failed sends store nothing (approach from daymade/whatsapp-mcp and upstream PRs #229 and #265)
