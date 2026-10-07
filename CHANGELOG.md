@@ -5,6 +5,7 @@
 <!-- markdownlint-disable MD013 MD024 MD022 MD032 -->
 ## [2026-10-06] - Mentions on send and a fixed `store/` path
 
+- docs: archive the completed `store-sent-messages` OpenSpec change and sync its delta into the new main spec `openspec/specs/outgoing-message-storage/spec.md`, the project's first capability spec
 - chore: ignore `.claude/settings.local.json` in Git, since it holds each user's local Claude Code permissions
 - fix: store messages sent through `/api/send` (text, mentions and media with or without a caption) as the user's own messages and update the chat's last message time, so `list_messages` and `list_chats` show them immediately and `download_media` works on sent files; failed sends store nothing (approach from daymade/whatsapp-mcp and upstream PRs #229 and #265)
 - docs: add OpenSpec change proposals, each with proposal, delta specs, design and tasks, for storing sent messages (`store-sent-messages`), accent-insensitive contact search over the full address book (`accent-insensitive-contact-search`), on-demand per-chat history backfill (`per-chat-history-sync`) and message listeners with signed webhook delivery (`message-webhooks`), based on the daymade, LukasHaas and AdamRussak forks and upstream PRs #229, #265, #343, #364, #326, #183 and #191
