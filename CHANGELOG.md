@@ -3,6 +3,14 @@
 **Note:** All dates are in Mexico City CST (UTC-6).
 
 <!-- markdownlint-disable MD013 MD024 MD022 MD032 -->
+## [2026-10-07] - Project documentation, credits and agent guide
+
+- docs: rewrite the README for this fork: build the bridge with `go build` (the documented `go run main.go` no longer compiles, and `go run` would use a temporary `store/`), clone from `incognia/whatsapp-mcp`, require Go 1.26 and Python 3.11, add Claude Code setup, list the current tools, gather every setting in one table, describe storage, LIDs and start-up migrations, add development and troubleshooting notes, and replace real chat details in the listener example with fictitious ones
+- docs: keep the MIT License and Luke Harries' copyright, and add copyright lines for Rodrigo Ernesto Álvarez Aguilera and the contributors listed in the new `AUTHORS.md`, which credits the original author, the authors of cherry-picked commits and the forks and pull requests whose approaches were adapted; add a licence footer to the README
+- docs: add `CONTRIBUTING.md` covering privacy rules for test data, development setup, the OpenSpec workflow, code guidelines, Conventional Commits, CHANGELOG format, crediting ported work and the contribution licence
+- docs: add `AGENTS.md` with guidance for AI coding agents (commands, hard rules on private data and sending, known pitfalls and conventions), and `CLAUDE.md` as a symlink to it
+- chore: ignore the whole `.claude/` folder in Git and stop tracking the generated OpenSpec `/opsx` commands and skills, which contributors generate locally with `openspec init`
+
 ## [2026-10-06] - Mentions on send and a fixed `store/` path
 
 - docs: archive the completed `quiet-message-content-logs` OpenSpec change and sync its delta into the new main spec `openspec/specs/bridge-logging/spec.md`, leaving no active changes

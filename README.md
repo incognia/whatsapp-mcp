@@ -1,128 +1,125 @@
 # WhatsApp MCP Server
 
-This is a Model Context Protocol (MCP) server for WhatsApp.
+A Model Context Protocol (MCP) server for your **personal WhatsApp account**. With it, Claude (or another MCP client) can search and read your messages (including images, videos, documents and audio), search your contacts, send messages and files to people or groups, load older history for a chat and notify other programs when certain messages arrive.
 
-With this you can search and read your personal Whatsapp messages (including images, videos, documents, and audio messages), search your contacts and send messages to either individuals or groups. You can also send media files including images, videos, documents, and audio messages.
-
-It connects to your **personal WhatsApp account** directly via the Whatsapp web multidevice API (using the [whatsmeow](https://github.com/tulir/whatsmeow) library). All your messages are stored locally in a SQLite database and only sent to an LLM (such as Claude) when the agent accesses them through tools (which you control).
-
-Here's an example of what you can do when it's connected to Claude.
+It connects through the WhatsApp Web multi-device API using the [whatsmeow](https://github.com/tulir/whatsmeow) library. Your messages are stored locally in SQLite and only reach an LLM when the agent reads them through a tool call you control.
 
 ![WhatsApp MCP](./example-use.png)
 
-> To get updates on this and other projects I work on [enter your email here](https://docs.google.com/forms/d/1rTF9wMBTN0vPfzWuQa2BjfGKdKIpTbyeKxhPMcEzgyI/preview)
+> **Caution:** like many MCP servers, this one is subject to [the lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/): private data, untrusted content (anyone can message you) and the ability to send messages. A prompt injection in a message could lead to data exfiltration. Review what the agent sends, and keep tool approvals on for `send_*` tools.
 
-> *Caution:* as with many MCP servers, the WhatsApp MCP is subject to [the lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/). This means that project injection could lead to private data exfiltration.
+> whatsmeow is an unofficial client. Unusual traffic can get an account restricted; use it for personal automation, not bulk messaging.
+
+## About this fork
+
+This is a maintained fork of [lharries/whatsapp-mcp](https://github.com/lharries/whatsapp-mcp). It brings the bridge up to date with current whatsmeow and LID addressing, and adds fixes and features collected from upstream pull requests and other forks:
+
+- Messages sent from Claude are stored at once, with `@mentions` that notify in groups
+- Contact search over the phone's whole address book, ignoring accents and case
+- Correct last message per chat, and group senders and LID mentions resolved to phone numbers
+- On-demand loading of older history for one chat
+- Message listeners that post matching live messages to a signed webhook
+- Safer defaults: API bound to loopback, media path restrictions, no message content in console logs
+
+Every change is listed in [CHANGELOG.md](./CHANGELOG.md), and the behaviour of each capability is specified under [`openspec/specs/`](./openspec/specs/).
 
 ## Installation
 
 ### Prerequisites
 
-- Go
-- Python 3.6+
-- Anthropic Claude Desktop app (or Cursor)
-- UV (Python package manager), install with `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- FFmpeg (_optional_) - Only needed for audio messages. If you want to send audio files as playable WhatsApp voice messages, they must be in `.ogg` Opus format. With FFmpeg installed, the MCP server will automatically convert non-Opus audio files. Without FFmpeg, you can still send raw audio files using the `send_file` tool.
+- Go 1.26 or later
+- Python 3.11 or later
+- [uv](https://docs.astral.sh/uv/): `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- An MCP client: Claude Code, Claude Desktop or Cursor
+- FFmpeg (_optional_): only needed to send audio that is not already `.ogg` Opus as a playable voice message
 
-### Steps
+### 1. Clone the repository
 
-1. **Clone this repository**
+```bash
+git clone https://github.com/incognia/whatsapp-mcp.git
+cd whatsapp-mcp
+```
 
-   ```bash
-   git clone https://github.com/lharries/whatsapp-mcp.git
-   cd whatsapp-mcp
-   ```
+### 2. Build and run the bridge
 
-2. **Run the WhatsApp bridge**
+```bash
+cd whatsapp-bridge
+go build -o whatsapp-bridge .
+./whatsapp-bridge
+```
 
-   Navigate to the whatsapp-bridge directory and run the Go application:
+The first time, the bridge shows a QR code: scan it from WhatsApp on your phone (**Settings › Linked devices › Link a device**). Your history then syncs for a few minutes. You may need to scan again after roughly 20 days without use.
 
-   ```bash
-   cd whatsapp-bridge
-   go run main.go
-   ```
+Keep the bridge running while you use the MCP server. It always keeps its data in the `store/` folder next to the binary, whatever directory you start it from.
 
-   The first time you run it, you will be prompted to scan a QR code. Scan the QR code with your WhatsApp mobile app to authenticate.
+> Use `go build` rather than `go run`: `go run` places the binary in a temporary folder, so the bridge would create a new, empty `store/` there and ask for a new QR code.
 
-   After approximately 20 days, you will might need to re-authenticate.
+**Windows:** `go-sqlite3` needs CGO, which is off by default. Install a C compiler (for example with [MSYS2](https://www.msys2.org/), adding its `ucrt64\bin` folder to `PATH`), then run `go env -w CGO_ENABLED=1` before building. Without it you will see `Binary was compiled with 'CGO_ENABLED=0', go-sqlite3 requires cgo to work.`
 
-3. **Connect to the MCP server**
+### 3. Connect your MCP client
 
-   Copy the below json with the appropriate {{PATH}} values:
+The MCP server is started by your client with uv; you do not run it yourself. Replace `/path/to/whatsapp-mcp` with the repository's absolute path (`pwd` inside the clone).
 
-   ```json
-   {
-     "mcpServers": {
-       "whatsapp": {
-         "command": "{{PATH_TO_UV}}", // Run `which uv` and place the output here
-         "args": [
-           "--directory",
-           "{{PATH_TO_SRC}}/whatsapp-mcp/whatsapp-mcp-server", // cd into the repo, run `pwd` and enter the output here + "/whatsapp-mcp-server"
-           "run",
-           "main.py"
-         ]
-       }
-     }
-   }
-   ```
+**Claude Code**
 
-   For **Claude**, save this as `claude_desktop_config.json` in your Claude Desktop configuration directory at:
+```bash
+claude mcp add whatsapp --scope user -- uv --directory /path/to/whatsapp-mcp/whatsapp-mcp-server run main.py
+```
 
-   ```
-   ~/Library/Application Support/Claude/claude_desktop_config.json
-   ```
+Check it with `claude mcp get whatsapp`, then start a new Claude Code session.
 
-   For **Cursor**, save this as `mcp.json` in your Cursor configuration directory at:
+**Claude Desktop or Cursor**
 
-   ```
-   ~/.cursor/mcp.json
-   ```
+Add this to `~/Library/Application Support/Claude/claude_desktop_config.json` (Claude Desktop) or `~/.cursor/mcp.json` (Cursor), using the output of `which uv` as `command`, and restart the app:
 
-4. **Restart Claude Desktop / Cursor**
+```json
+{
+  "mcpServers": {
+    "whatsapp": {
+      "command": "/path/to/uv",
+      "args": ["--directory", "/path/to/whatsapp-mcp/whatsapp-mcp-server", "run", "main.py"]
+    }
+  }
+}
+```
 
-   Open Claude Desktop and you should now see WhatsApp as an available integration.
+## Usage
 
-   Or restart Cursor.
+Ask in plain language: "summarise today's messages in the family group", "what did Ana say about Friday?", "send Luis the PDF in my Downloads folder".
 
-### Windows Compatibility
+### MCP tools
 
-If you're running this project on Windows, be aware that `go-sqlite3` requires **CGO to be enabled** in order to compile and work properly. By default, **CGO is disabled on Windows**, so you need to explicitly enable it and have a C compiler installed.
+**Reading**
 
-#### Steps to get it working:
+- **search_contacts**: find contacts by name or phone number across the whole address book (saved, first, business and profile names), ignoring accents and case; every word must appear, in any order, and partial or formatted numbers work
+- **list_chats**: list chats, optionally filtered with the same matching and sorted by activity or name
+- **get_chat**, **get_direct_chat_by_contact**, **get_contact_chats**: chat details, a contact's one-to-one chat, or every chat involving a contact
+- **list_messages**: messages filtered by chat, sender, text and dates, with optional context; mentions are shown as `@Name`
+- **get_message_context**, **get_last_interaction**: messages around one message, or the latest message with a contact
+- **download_media**: download a message's image, video, document or audio and return its local path
+- **request_chat_history**: ask your phone for older messages of one chat (see "Loading older history")
 
-1. **Install a C compiler**  
-   We recommend using [MSYS2](https://www.msys2.org/) to install a C compiler for Windows. After installing MSYS2, make sure to add the `ucrt64\bin` folder to your `PATH`.  
-   → A step-by-step guide is available [here](https://code.visualstudio.com/docs/cpp/config-mingw).
+**Sending**
 
-2. **Enable CGO and run the app**
+- **send_message**: send text to a phone number or group JID; `mentions` (phone numbers) tags people in a group, with `@<number>` in the text where each tag goes
+- **send_file**: send an image, video, document or raw audio
+- **send_audio_message**: send audio as a playable voice message (`.ogg` Opus, or any format with FFmpeg installed)
 
-   ```bash
-   cd whatsapp-bridge
-   go env -w CGO_ENABLED=1
-   go run main.go
-   ```
+Sent messages are stored immediately as your own, so they show up in `list_messages` and `list_chats` straight away.
 
-Without this setup, you'll likely run into errors like:
+**Listeners**
 
-> `Binary was compiled with 'CGO_ENABLED=0', go-sqlite3 requires cgo to work.`
+- **create_listener**, **list_listeners**, **set_listener_enabled**, **test_listener**, **delete_listener**: manage message listeners (see "Message listeners and webhooks")
 
-## Architecture Overview
+### Media
 
-This application consists of two main components:
+Only media metadata is stored. To get a file, call `download_media` with the `message_id` and `chat_jid` shown next to the media message; it returns the local path. Generated filenames use the message's time and ID, so files never overwrite each other.
 
-1. **Go WhatsApp Bridge** (`whatsapp-bridge/`): A Go application that connects to WhatsApp's web API, handles authentication via QR code, and stores message history in SQLite. It serves as the bridge between WhatsApp and the MCP server.
+To send media, the MCP server passes a local path to the bridge. Paths containing `..` are refused, and `WHATSAPP_MEDIA_ROOTS` can restrict sending to chosen folders.
 
-2. **Python MCP Server** (`whatsapp-mcp-server/`): A Python server implementing the Model Context Protocol (MCP), which provides standardized tools for Claude to interact with WhatsApp data and send/receive messages.
+### Loading older history
 
-### Data Storage
-
-- All message history is stored in a SQLite database within the `whatsapp-bridge/store/` directory
-- The database maintains tables for chats and messages
-- Messages are indexed for efficient searching and retrieval
-
-#### Loading older history
-
-WhatsApp only sends message history once, when the device is paired. To load older messages for one chat later, without unlinking and re-pairing, the bridge can ask your phone for them:
+WhatsApp only sends message history once, when the device is linked. To load older messages for one chat later, without unlinking and linking again, the bridge can ask your phone for them. From Claude, use `request_chat_history`; the REST API is:
 
 - `POST /api/history/backfill` with `{"chat_jid": "<jid>", "count": 50}` requests up to `count` messages older than the oldest message already stored for that chat (the anchor). It answers `202 Accepted` immediately.
 - Delivery is asynchronous: your phone must be online, and it answers within seconds with an on-demand history sync, which the bridge stores like any other history.
@@ -131,41 +128,7 @@ WhatsApp only sends message history once, when the device is paired. To load old
 - A chat with no stored messages cannot be backfilled, because there is no anchor (`404 no_anchor`). Wait for one new message in that chat first.
 - Repeat the request to go further back: each one starts from the new oldest stored message.
 
-Use it sparingly: whatsmeow is an unofficial client, and unusual traffic can put your account at risk. From Claude, use the `request_chat_history` tool.
-
-### Console output
-
-By default the bridge never prints message text, captions, media filenames or local file paths. Each live or sent message logs one metadata line (time, direction, chat, sender, media type and length), and each history sync logs one summary line per chat:
-
-```text
-[2026-10-06 23:40:28] ← 120363000000000000@g.us 5215500000001: text (17 chars)
-History sync for 5215500000002@s.whatsapp.net: stored 19 messages (oldest 2025-11-01 08:00:00, newest 2026-10-06 21:14:03)
-```
-
-To see message content while debugging locally, start the bridge with `WHATSAPP_LOG_CONTENT=true` (or `1`); any other value keeps it off, and the bridge states the setting at start-up. It only adds content to these lines: whatsmeow's own log level does not change.
-
-## Usage
-
-Once connected, you can interact with your WhatsApp contacts through Claude, leveraging Claude's AI capabilities in your WhatsApp conversations.
-
-### MCP Tools
-
-Claude can access the following tools to interact with WhatsApp:
-
-- **search_contacts**: Search for contacts by name or phone number
-- **list_messages**: Retrieve messages with optional filters and context
-- **list_chats**: List available chats with metadata
-- **get_chat**: Get information about a specific chat
-- **get_direct_chat_by_contact**: Find a direct chat with a specific contact
-- **get_contact_chats**: List all chats involving a specific contact
-- **get_last_interaction**: Get the most recent message with a contact
-- **get_message_context**: Retrieve context around a specific message
-- **send_message**: Send a WhatsApp message to a specified phone number or group JID
-- **send_file**: Send a file (image, video, raw audio, document) to a specified recipient
-- **send_audio_message**: Send an audio file as a WhatsApp voice message (requires the file to be an .ogg opus file or ffmpeg must be installed)
-- **download_media**: Download media from a WhatsApp message and get the local file path
-- **request_chat_history**: Ask your phone for older messages of one chat (see "Loading older history"); waits up to `wait_seconds` for the answer
-- **create_listener**, **list_listeners**, **delete_listener**, **set_listener_enabled**, **test_listener**: Manage message listeners that post matching live messages to a webhook (see "Message listeners and webhooks")
+Use it sparingly.
 
 ### Message listeners and webhooks
 
@@ -174,10 +137,10 @@ A listener watches live messages as they arrive and, when one matches, sends it 
 **Criteria** (set at least one): `chat_jids`, `senders`, `contains` (case-insensitive, captions included), `regex` (RE2) and `mentions_me` (messages that tag you). With `match_mode: "or"` (default) any set criterion fires the listener; with `"and"` all of them must match. Several values in one list are always alternatives. Your own messages are ignored unless `include_from_me` is true. History sync, edits, status updates and messages older than `WEBHOOK_MAX_AGE` never fire a listener.
 
 ```sh
-# Create: notify a local script when Amelia mentions "guardia" in the DevSecOps group
+# Create: notify a local script when someone writes "deploy" in a team group
 curl -s -X POST http://127.0.0.1:8080/api/listeners -H 'Content-Type: application/json' -d '{
-  "name": "Guardias", "match_mode": "and",
-  "chat_jids": ["120363422597955321@g.us"], "contains": ["guardia"],
+  "name": "Deploys", "match_mode": "and",
+  "chat_jids": ["120363000000000000@g.us"], "contains": ["deploy"],
   "webhook_url": "http://127.0.0.1:5678/webhook/wa", "secret": "a-secret-of-16-or-more-characters"
 }'
 curl -s http://127.0.0.1:8080/api/listeners                       # list (secrets never shown)
@@ -187,7 +150,7 @@ curl -s http://127.0.0.1:8080/api/listeners/1/deliveries          # recent deliv
 curl -s -X DELETE http://127.0.0.1:8080/api/listeners/1
 ```
 
-`POST /api/listeners/validate` checks a listener without saving it; invalid listeners get `400` with every problem in `errors`. From Claude, use the `create_listener`, `list_listeners`, `set_listener_enabled`, `test_listener` and `delete_listener` tools.
+`POST /api/listeners/validate` checks a listener without saving it; invalid listeners get `400` with every problem in `errors`.
 
 **Payload** (`X-Webhook-Event: message`, `version: 1`): `delivery_id`, `listener` (`id`, `name`), `match_mode`, `matched` (criteria that matched) and `message` with `id`, `chat_jid`, `chat_name`, `is_group`, `sender`, `sender_jid`, `sender_name`, `timestamp` (RFC 3339, UTC), `content` (at most 4,096 characters, with `content_truncated` when cut), `media_type`, `filename`, `is_from_me` and `mentions_me`. Media is not embedded; fetch it with `download_media`.
 
@@ -207,55 +170,92 @@ def verify(secret: str, headers, body: bytes, tolerance: int = 300) -> bool:
 **Safety**:
 
 - `webhook_url` must be `http` or `https` with no embedded credentials; `https` is required except for `localhost` and private networks. Link-local and cloud metadata addresses (`169.254.169.254`), multicast, broadcast and the bridge's own API are refused, also after DNS resolution. `WEBHOOK_ALLOWED_HOSTS` restricts targets further.
-- The listener endpoints refuse requests with an `Origin` header, non-JSON bodies and unexpected `Host` headers, so a web page cannot create listeners. If you bind the API beyond loopback (`BIND_ADDR`), set `WEBHOOK_ADMIN_TOKEN` and send it as `Authorization: Bearer <token>`; without it, listener management is refused.
+- The listener endpoints refuse requests with an `Origin` header, non-JSON bodies and unexpected `Host` headers, so a web page cannot create listeners. If you bind the API beyond loopback (`BIND_ADDR`), set `WEBHOOK_ADMIN_TOKEN` and send it as `Authorization: Bearer <token>`; without it, listener management is refused. The MCP server sends it too when `WEBHOOK_ADMIN_TOKEN` is set in its environment.
 - Secrets are write-only, URL query values are masked in answers, logs show only the scheme and host, and the delivery log never stores message content.
+
+## Configuration
+
+All settings are environment variables of the bridge (`WEBHOOK_ADMIN_TOKEN` also of the MCP server). Example: `BIND_ADDR=0.0.0.0 WEBHOOK_ADMIN_TOKEN=… ./whatsapp-bridge`.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `WEBHOOK_ALLOWED_HOSTS` | (any) | Comma-separated host names, `*.domain` suffixes or IPs allowed as targets |
+| `BIND_ADDR` | `127.0.0.1` | Address of the REST API (port 8080). The API has no authentication and can read and send messages, so only change it on a network you trust |
+| `WHATSAPP_MEDIA_ROOTS` | (any path without `..`) | Folders, separated by `:` (`;` on Windows), that media may be sent from |
+| `WHATSAPP_LOG_CONTENT` | off | `true` or `1` prints message text and filenames in the console, for local debugging |
+| `WEBHOOK_ALLOWED_HOSTS` | (any) | Comma-separated host names, `*.domain` suffixes or IPs allowed as webhook targets |
 | `WEBHOOK_ADMIN_TOKEN` | (none) | Bearer token for the listener endpoints; required when `BIND_ADDR` is not loopback |
 | `WEBHOOK_QUEUE_SIZE` | `256` | Deliveries waiting at most |
 | `WEBHOOK_WORKERS` | `2` | Concurrent deliveries |
 | `WEBHOOK_TIMEOUT` | `10s` | Per-attempt timeout (seconds or a Go duration) |
 | `WEBHOOK_MAX_AGE` | `15m` | Ignore messages older than this (`0` disables) |
 
-### Media Handling Features
+## Architecture
 
-The MCP server supports both sending and receiving various media types:
+Two components:
 
-#### Media Sending
+1. **Go bridge** (`whatsapp-bridge/`): connects to WhatsApp, handles linking by QR code, stores chats and messages in SQLite and serves a REST API on `127.0.0.1:8080` for sending, media download, history backfill and listeners.
+2. **Python MCP server** (`whatsapp-mcp-server/`): exposes the MCP tools. It reads the SQLite databases directly (read-only for whatsmeow's store) and calls the bridge's REST API for anything that talks to WhatsApp.
 
-You can send various media types to your WhatsApp contacts:
+```text
+Claude ⇄ MCP server ──reads──▶ store/messages.db, store/whatsapp.db
+             │                         ▲
+             └──REST (localhost)──▶ Go bridge ⇄ WhatsApp
+```
 
-- **Images, Videos, Documents**: Use the `send_file` tool to share any supported media type.
-- **Voice Messages**: Use the `send_audio_message` tool to send audio files as playable WhatsApp voice messages.
-  - For optimal compatibility, audio files should be in `.ogg` Opus format.
-  - With FFmpeg installed, the system will automatically convert other audio formats (MP3, WAV, etc.) to the required format.
-  - Without FFmpeg, you can still send raw audio files using the `send_file` tool, but they won't appear as playable voice messages.
+### Data storage
 
-#### Media Downloading
+- `whatsapp-bridge/store/messages.db`: chats, messages and listeners, written by the bridge
+- `whatsapp-bridge/store/whatsapp.db`: whatsmeow's session, contacts and LID mappings
+- WhatsApp's newer LID identifiers (`…@lid`) are translated to phone numbers for chats, senders and mentions, so one conversation is never split in two
+- On start-up the bridge applies schema migrations and data repairs (merging LID chats, fixing group senders and mentions, renaming media files, realigning each chat's last message time). They are additive and safe to run on every start
 
-By default, just the metadata of the media is stored in the local database. The message will indicate that media was sent. To access this media you need to use the download_media tool which takes the `message_id` and `chat_jid` (which are shown when printing messages containing the meda), this downloads the media and then returns the file path which can be then opened or passed to another tool.
+`store/` is ignored by Git. It holds your whole message history and the session key: do not share it.
 
-## Technical Details
+### Console output
 
-1. Claude sends requests to the Python MCP server
-2. The MCP server queries the Go bridge for WhatsApp data or directly to the SQLite database
-3. The Go accesses the WhatsApp API and keeps the SQLite database up to date
-4. Data flows back through the chain to Claude
-5. When sending messages, the request flows from Claude through the MCP server to the Go bridge and to WhatsApp
+By default the bridge never prints message text, captions, media filenames or local file paths. Each live or sent message logs one metadata line (time, direction, chat, sender, media type and length), and each history sync logs one summary line per chat:
+
+```text
+[2026-10-06 23:40:28] ← 120363000000000000@g.us 5215500000001: text (17 chars)
+History sync for 5215500000002@s.whatsapp.net: stored 19 messages (oldest 2025-11-01 08:00:00, newest 2026-10-06 21:14:03)
+```
+
+To see message content while debugging locally, start the bridge with `WHATSAPP_LOG_CONTENT=true` (or `1`); any other value keeps it off, and the bridge states the setting at start-up. It only adds content to these lines: whatsmeow's own log level does not change.
+
+## Development
+
+```bash
+cd whatsapp-bridge && go vet ./... && go test -race ./...
+cd whatsapp-mcp-server && uv run pytest
+```
+
+The Python tests build temporary databases from fictitious data; neither suite needs a WhatsApp connection.
+
+Changes follow [OpenSpec](https://github.com/Fission-AI/OpenSpec) (spec-driven schema, UK English): each change has a proposal, delta specs, design and tasks under `openspec/changes/`, and is archived into the main specs in `openspec/specs/` once done. Commits follow Conventional Commits, and every change is recorded in `CHANGELOG.md`.
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.
 
 ## Troubleshooting
 
-- If you encounter permission issues when running uv, you may need to add it to your PATH or use the full path to the executable.
-- Make sure both the Go application and the Python server are running for the integration to work properly.
+- **The MCP server shows no messages, or the bridge asks for a QR code again**: the bridge was probably started with `go run` or from an old binary elsewhere, so it used another `store/`. Build it with `go build -o whatsapp-bridge .` inside `whatsapp-bridge/` and run that binary.
+- **"Client outdated (405)"**: WhatsApp rejects old whatsmeow versions. Update it with `go get go.mau.fi/whatsmeow@latest && go mod tidy`, rebuild and restart.
+- **Sending fails with "connection refused"**: the bridge is not running, or is bound to another address.
+- **QR code not displaying**: restart the bridge and make sure your terminal is wide enough to draw it.
+- **Already linked**: with an active session, the bridge reconnects without a QR code.
+- **Device limit reached**: remove a linked device in WhatsApp on your phone (**Settings › Linked devices**).
+- **No messages after linking**: the first history sync can take several minutes with many chats.
+- **A chat is missing older messages**: load them with `request_chat_history` instead of linking again.
+- **Out of sync beyond repair**: stop the bridge, delete `whatsapp-bridge/store/messages.db` and `whatsapp-bridge/store/whatsapp.db`, and start it again to link from scratch. This loses listeners and any history your phone no longer sends.
+- **uv permission or path errors**: use the full path from `which uv` in your MCP client's configuration.
 
-### Authentication Issues
+For Claude Desktop integration issues, see the [MCP documentation](https://modelcontextprotocol.io/quickstart/server#claude-for-desktop-integration-issues).
 
-- **QR Code Not Displaying**: If the QR code doesn't appear, try restarting the authentication script. If issues persist, check if your terminal supports displaying QR codes.
-- **WhatsApp Already Logged In**: If your session is already active, the Go bridge will automatically reconnect without showing a QR code.
-- **Device Limit Reached**: WhatsApp limits the number of linked devices. If you reach this limit, you'll need to remove an existing device from WhatsApp on your phone (Settings > Linked Devices).
-- **No Messages Loading**: After initial authentication, it can take several minutes for your message history to load, especially if you have many chats.
-- **WhatsApp Out of Sync**: If your WhatsApp messages get out of sync with the bridge, delete both database files (`whatsapp-bridge/store/messages.db` and `whatsapp-bridge/store/whatsapp.db`) and restart the bridge to re-authenticate.
+## Credits
 
-For additional Claude Desktop integration troubleshooting, see the [MCP documentation](https://modelcontextprotocol.io/quickstart/server#claude-for-desktop-integration-issues). The documentation includes helpful tips for checking logs and resolving common issues.
+Created by [Luke Harries](https://github.com/lharries) ([original repository](https://github.com/lharries/whatsapp-mcp); [updates on his projects](https://docs.google.com/forms/d/1rTF9wMBTN0vPfzWuQa2BjfGKdKIpTbyeKxhPMcEzgyI/preview)). This fork includes commits from upstream pull requests and approaches from the daymade, LukasHaas and AdamRussak forks. [AUTHORS.md](./AUTHORS.md) lists everyone whose work is included, and [CHANGELOG.md](./CHANGELOG.md) credits the source of each change.
+
+---
+
+*This fork is maintained by Rodrigo Álvarez (@incognia) and distributed under the MIT License. For details, see the LICENSE file.*
+
+*Copyright © 2025 Luke Harries. Copyright © 2026 Rodrigo Ernesto Álvarez Aguilera and the contributors listed in AUTHORS.md.*
