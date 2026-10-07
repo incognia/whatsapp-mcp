@@ -37,7 +37,7 @@ Run the relevant suites before saying a change is done, and report failures with
 
 ## Gotchas
 
-- **Use `go build`, not `go run`.** The bridge `chdir`s to its own binary's folder so it always uses the `store/` next to it; under `go run` that folder is a temporary build directory, giving an empty store and a new QR code.
+- **Store location.** The bridge `chdir`s to its own folder so it always uses `whatsapp-bridge/store/` (`store_dir.go`): the binary's folder for built binaries, the source folder under `go run`, and it refuses to start under `go run` when the source folder is unknown (`-trimpath`). Keep store paths relative to that folder and check the `Using store:` start-up line when debugging a missing session.
 - The bridge must be **rebuilt and restarted by the user** to pick up Go changes; the MCP server is restarted by the MCP client (a new session), not by you.
 - **LIDs**: WhatsApp now uses `…@lid` identifiers. The bridge translates them to phone-number JIDs (`resolveLID`, `whatsmeow_lid_map`) for chats, senders and mentions; keep new code on phone-number JIDs so chats are not split.
 - The whatsmeow logger (`waLog.Stdout("Client", "INFO", true)`) is shared by the bridge and whatsmeow; raising its level floods the console with protocol traffic.

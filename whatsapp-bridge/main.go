@@ -1087,15 +1087,9 @@ func main() {
 	logger := waLog.Stdout("Client", "INFO", true)
 	logger.Infof("Starting WhatsApp client...")
 
-	// Always use the store/ next to the binary (where the MCP server reads it),
-	// regardless of the directory the bridge is launched from
-	if exe, err := os.Executable(); err == nil {
-		if exe, err = filepath.EvalSymlinks(exe); err == nil {
-			if err := os.Chdir(filepath.Dir(exe)); err != nil {
-				logger.Warnf("Failed to change to the bridge directory: %v", err)
-			}
-		}
-	}
+	// Always use the bridge folder's store/ (where the MCP server reads it), whatever the
+	// directory the bridge is launched from, also under `go run`
+	useBridgeDir()
 
 	// Create database connection for storing session data
 	dbLog := waLog.Stdout("Database", "INFO", true)

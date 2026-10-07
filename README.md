@@ -52,7 +52,7 @@ The first time, the bridge shows a QR code: scan it from WhatsApp on your phone 
 
 Keep the bridge running while you use the MCP server. It always keeps its data in the `store/` folder next to the binary, whatever directory you start it from.
 
-> Use `go build` rather than `go run`: `go run` places the binary in a temporary folder, so the bridge would create a new, empty `store/` there and ask for a new QR code.
+> `go run .` inside `whatsapp-bridge/` (or `go -C whatsapp-bridge run .` from the repository root) also works and uses the same `store/`; a built binary starts faster. The bridge prints the `store/` folder it uses at start-up.
 
 **Windows:** `go-sqlite3` needs CGO, which is off by default. Install a C compiler (for example with [MSYS2](https://www.msys2.org/), adding its `ucrt64\bin` folder to `PATH`), then run `go env -w CGO_ENABLED=1` before building. Without it you will see `Binary was compiled with 'CGO_ENABLED=0', go-sqlite3 requires cgo to work.`
 
@@ -237,7 +237,8 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.
 
 ## Troubleshooting
 
-- **The MCP server shows no messages, or the bridge asks for a QR code again**: the bridge was probably started with `go run` or from an old binary elsewhere, so it used another `store/`. Build it with `go build -o whatsapp-bridge .` inside `whatsapp-bridge/` and run that binary.
+- **The MCP server shows no messages, or the bridge asks for a QR code again**: check the `Using store:` line at start-up. It must be `whatsapp-bridge/store` in your clone; another path means an old binary or a copy elsewhere. Builds older than this fork's `go run` fix also used a temporary `store/` under `go run`; remove that extra linked device on your phone (**Settings › Linked devices**).
+- **"Cannot locate the bridge folder under go run"**: the bridge was run with `go run -trimpath` or from copied sources. Build it with `go build -o whatsapp-bridge .` inside `whatsapp-bridge/` and run that binary.
 - **"Client outdated (405)"**: WhatsApp rejects old whatsmeow versions. Update it with `go get go.mau.fi/whatsmeow@latest && go mod tidy`, rebuild and restart.
 - **Sending fails with "connection refused"**: the bridge is not running, or is bound to another address.
 - **QR code not displaying**: restart the bridge and make sure your terminal is wide enough to draw it.
