@@ -5,6 +5,7 @@
 <!-- markdownlint-disable MD013 MD024 MD022 MD032 -->
 ## [2026-10-06] - Mentions on send and a fixed `store/` path
 
+- docs: archive the completed `accent-insensitive-contact-search` OpenSpec change and sync its delta into the new main spec `openspec/specs/contact-search/spec.md`
 - feat: make `search_contacts` search the phone's whole address book (saved, first, business and profile names, read strictly read-only from whatsmeow's store) as well as individual chats, so contacts without message history are found, with LID contacts reported once under their phone number (approach from the LukasHaas fork, upstream PR #343)
 - feat: match contact searches ignoring accents and case, with every word required in any order and partial or formatted phone numbers accepted, ranking word-start matches and contacts with a chat first
 - feat: apply the same matching to the `list_chats` query filter, including a chat's address-book names, and paginate after filtering
