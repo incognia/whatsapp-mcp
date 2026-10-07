@@ -73,7 +73,7 @@ func newTestDeliverer(t *testing.T, queue, workers int, timeout time.Duration) (
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := NewDeliverer(store, waLog.Noop, queue, workers, timeout, testSelf)
+	d := NewDeliverer(store, waLog.Noop, queue, workers, timeout, urlPolicy{self: testSelf})
 	d.backoff = []time.Duration{10 * time.Millisecond, 10 * time.Millisecond, 10 * time.Millisecond}
 	t.Cleanup(func() { d.Shutdown(time.Second) })
 	return d, store, created.ID

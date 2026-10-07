@@ -113,7 +113,7 @@ func setupListeners(store *MessageStore, cfg webhookConfig, port int, logger waL
 	if err := listenerRegistry.Reload(store); err != nil {
 		logger.Warnf("Failed to load message listeners: %v", err)
 	}
-	webhookDeliverer = NewDeliverer(store, logger, cfg.queueSize, cfg.workers, cfg.timeout, selfAddrPort(bindAddr, port))
+	webhookDeliverer = NewDeliverer(store, logger, cfg.queueSize, cfg.workers, cfg.timeout, urlPolicy{self: selfAddrPort(bindAddr, port), allowedHosts: cfg.allowedHosts})
 }
 
 // newListenerAPI wires the REST handlers to the running bridge
@@ -124,6 +124,7 @@ func newListenerAPI(client *whatsmeow.Client, store *MessageStore, cfg webhookCo
 		policy:   urlPolicy{self: selfAddrPort(bindAddr, port), allowedHosts: cfg.allowedHosts},
 		lidToPN:  clientLIDLookup(client),
 		bindHost: bindAddr, adminToken: cfg.adminToken, now: time.Now,
+		readOnly: sendGuardCfg.readOnly,
 	}
 }
 

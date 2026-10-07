@@ -27,6 +27,7 @@ type listenerAPI struct {
 	bindHost   string
 	adminToken string
 	now        func() time.Time
+	readOnly   bool
 }
 
 func isLoopbackHost(host string) bool {
@@ -155,7 +156,18 @@ func (api *listenerAPI) reload() {
 
 // --- handlers ---
 
+// refuseReadOnly answers 403 for listener changes in read-only mode
+func (api *listenerAPI) refuseReadOnly(w http.ResponseWriter) bool {
+	if api.readOnly {
+		writeAPIError(w, http.StatusForbidden, "listener changes are disabled (WHATSAPP_READ_ONLY)")
+	}
+	return api.readOnly
+}
+
 func (api *listenerAPI) create(w http.ResponseWriter, r *http.Request) {
+	if api.refuseReadOnly(w) {
+		return
+	}
 	in, ok := decodeListenerInput(w, r)
 	if !ok {
 		return
@@ -232,6 +244,9 @@ func (api *listenerAPI) get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *listenerAPI) update(w http.ResponseWriter, r *http.Request) {
+	if api.refuseReadOnly(w) {
+		return
+	}
 	l, ok := api.listenerID(w, r)
 	if !ok {
 		return
@@ -240,8 +255,11 @@ func (api *listenerAPI) update(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	savedURL := l.WebhookURL
 	in.applyTo(&l)
 	ctx, _ := api.validation(false)
+	// A listener saved under an older policy can still be disabled or edited without moving it
+	ctx.keepURL = savedURL
 	if errs := validateListener(&l, ctx); len(errs) > 0 {
 		writeValidationErrors(w, errs)
 		return
@@ -269,6 +287,9 @@ func (api *listenerAPI) remove(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *listenerAPI) test(w http.ResponseWriter, r *http.Request) {
+	if api.refuseReadOnly(w) {
+		return
+	}
 	l, ok := api.listenerID(w, r)
 	if !ok {
 		return

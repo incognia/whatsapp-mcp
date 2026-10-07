@@ -323,6 +323,8 @@ type validationContext struct {
 	lidToPN       lidLookup
 	creating      bool
 	existingCount int
+	// keepURL is the saved webhook_url of the listener being updated; it is not re-checked
+	keepURL string
 }
 
 // validateListener normalises l in place and returns every problem found (empty when valid)
@@ -392,8 +394,10 @@ func validateListener(l *Listener, ctx validationContext) []FieldError {
 		add("criteria", "at least one criterion is required (chat_jids, senders, contains, regex or mentions_me)")
 	}
 
-	if err := validateWebhookURL(l.WebhookURL, ctx.policy); err != nil {
-		add("webhook_url", "%v", err)
+	if ctx.keepURL == "" || l.WebhookURL != ctx.keepURL {
+		if err := validateWebhookURL(l.WebhookURL, ctx.policy); err != nil {
+			add("webhook_url", "%v", err)
+		}
 	}
 
 	if l.Secret != "" && utf8.RuneCountInString(l.Secret) < minSecretLength {

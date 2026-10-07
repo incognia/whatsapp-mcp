@@ -1,5 +1,6 @@
 import sqlite3
 
+from conftest import text_of
 from whatsapp import list_chats
 
 
@@ -60,7 +61,7 @@ def test_include_last_message_false(stores):
 
 def test_last_message_included_by_default(stores):
     chat = list_chats(query="jose")[0]
-    assert chat.last_message == "hello 1"
+    assert text_of(chat.last_message) == "hello 1"
 
 
 def test_blank_query_is_no_filter(stores):

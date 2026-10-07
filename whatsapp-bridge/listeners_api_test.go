@@ -26,7 +26,7 @@ func newAPIHarness(t *testing.T, bindHost, token string) *apiHarness {
 	t.Helper()
 	store := openTestStore(t)
 	reg := NewListenerRegistry(15*time.Minute, time.Now)
-	d := NewDeliverer(store, waLog.Noop, 8, 1, 2*time.Second, testSelf)
+	d := NewDeliverer(store, waLog.Noop, 8, 1, 2*time.Second, urlPolicy{self: testSelf})
 	t.Cleanup(func() { d.Shutdown(time.Second) })
 	api := &listenerAPI{
 		store: store, registry: reg, deliverer: d, policy: urlPolicy{self: testSelf},

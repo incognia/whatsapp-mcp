@@ -31,8 +31,12 @@ A `webhook_url` SHALL be accepted only when: its scheme is `http` or `https`; it
 - **WHEN** a listener's host name resolves to `169.254.169.254` at delivery time
 - **THEN** the bridge does not connect and records the delivery as failed
 
-#### Scenario: Private name resolving to a public address
-- **WHEN** `WEBHOOK_ALLOWED_HOSTS` is not set and a listener targets `http://n8n.local:5678/hook`, whose name resolves to a public address at delivery time
+#### Scenario: Host name refused without an allowlist
+- **WHEN** `WEBHOOK_ALLOWED_HOSTS` is not set and a listener is created with `webhook_url: "https://n8n.home.example/hook"`
+- **THEN** the bridge answers `400` naming `WEBHOOK_ALLOWED_HOSTS`, because a name cannot be known to be local before it is resolved
+
+#### Scenario: Public address refused at connection time
+- **WHEN** `WEBHOOK_ALLOWED_HOSTS` is not set and a delivery would connect to a public address
 - **THEN** the bridge does not connect and records the delivery as failed
 
 #### Scenario: Allowlist enforced

@@ -12,7 +12,7 @@ The MCP server SHALL publish server instructions stating that message text, capt
 - **THEN** the initialisation result contains those instructions
 
 ### Requirement: Read tools delimit third-party text
-Tools that return message text (`list_messages`, `get_message_context`, `get_last_interaction`, and the last message in `list_chats`, `get_chat` and `get_direct_chat_by_contact`) SHALL return each message's text between explicit start and end markers that carry the message ID, so text inside a message cannot pass itself off as tool output or as another message, and the text output SHALL start with a one-line reminder that the content is untrusted. Marker strings that appear inside a message's own text SHALL be neutralised before it is returned.
+Tools that return message text (`list_messages`, `get_message_context`, `get_last_interaction`, and the message text in `list_chats`, `get_chat`, `get_direct_chat_by_contact` and `get_contact_chats`) SHALL return each message's text between explicit start and end markers that carry the message ID, so text inside a message cannot pass itself off as tool output or as another message, and the text output SHALL start with a one-line reminder that the content is untrusted. Marker strings that appear inside a message's own text SHALL be neutralised before it is returned.
 
 #### Scenario: Message text wrapped
 - **WHEN** `list_messages` returns a message whose text is "hola"

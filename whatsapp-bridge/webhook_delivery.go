@@ -15,7 +15,6 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"strconv"
 	"sync"
@@ -39,8 +38,8 @@ var defaultBackoff = []time.Duration{2 * time.Second, 10 * time.Second, 30 * tim
 
 // newWebhookHTTPClient builds the client used for every webhook attempt: bounded time, no
 // redirects, no environment proxy (it would bypass the IP check) and the dial-time IP policy
-func newWebhookHTTPClient(timeout time.Duration, self netip.AddrPort) *http.Client {
-	dialer := &net.Dialer{Timeout: timeout, Control: dialControl(self)}
+func newWebhookHTTPClient(timeout time.Duration, policy urlPolicy) *http.Client {
+	dialer := &net.Dialer{Timeout: timeout, Control: dialControl(policy)}
 	return &http.Client{
 		Timeout: timeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -80,6 +79,7 @@ type Deliverer struct {
 	client  *http.Client
 	store   *MessageStore
 	logger  waLog.Logger
+	policy  urlPolicy
 	backoff []time.Duration
 	now     func() time.Time
 
@@ -101,11 +101,12 @@ type Deliverer struct {
 }
 
 // NewDeliverer starts the worker pool and the once-a-minute maintenance goroutine
-func NewDeliverer(store *MessageStore, logger waLog.Logger, queueSize, workers int, timeout time.Duration, self netip.AddrPort) *Deliverer {
+func NewDeliverer(store *MessageStore, logger waLog.Logger, queueSize, workers int, timeout time.Duration, policy urlPolicy) *Deliverer {
 	ctx, cancel := context.WithCancel(context.Background())
 	d := &Deliverer{
 		jobs:    make(chan DeliveryJob, queueSize),
-		client:  newWebhookHTTPClient(timeout, self),
+		client:  newWebhookHTTPClient(timeout, policy),
+		policy:  policy,
 		store:   store,
 		logger:  logger,
 		backoff: defaultBackoff,
@@ -169,6 +170,10 @@ func (d *Deliverer) worker() {
 
 // attempt makes one signed POST and classifies the answer
 func (d *Deliverer) attempt(job DeliveryJob) deliveryOutcome {
+	// Listeners saved under an older, looser policy are kept but cannot deliver
+	if err := validateWebhookURL(job.URL, d.policy); err != nil {
+		return deliveryOutcome{status: "failed", err: "refused by the webhook URL policy: " + err.Error()}
+	}
 	req, err := http.NewRequestWithContext(d.ctx, http.MethodPost, job.URL, bytes.NewReader(job.Body))
 	if err != nil {
 		return deliveryOutcome{status: "failed", err: "invalid request"}

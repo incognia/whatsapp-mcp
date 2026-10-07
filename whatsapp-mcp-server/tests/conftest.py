@@ -107,3 +107,11 @@ def stores(tmp_path, monkeypatch):
     monkeypatch.setattr(whatsapp, "MESSAGES_DB_PATH", str(messages_db))
     monkeypatch.setattr(whatsapp, "WHATSMEOW_DB_PATH", str(whatsmeow_db), raising=False)
     return {"messages": messages_db, "whatsmeow": whatsmeow_db}
+
+
+def text_of(wrapped):
+    """The message text inside `<<message id=…>>…<</message id=…>>` markers (None stays None)."""
+    if wrapped is None:
+        return None
+    start = wrapped.index(">>") + 2
+    return wrapped[start:wrapped.rindex("<</message id=")]

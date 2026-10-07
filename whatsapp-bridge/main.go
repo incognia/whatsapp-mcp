@@ -18,7 +18,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unicode/utf8"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal"
@@ -298,22 +297,59 @@ type SendMessageRequest struct {
 	Mentions  []string `json:"mentions,omitempty"`
 }
 
-// validateMediaPath closes CWE-22 (Path Traversal) in /api/send by refusing
-// paths that contain ".." components and, if the WHATSAPP_MEDIA_ROOTS env
-// var is set, restricting reads to that colon-separated allowlist of
-// directories. Without the env var the historical behavior (accept any
-// absolute path the process can read) is preserved so existing users are
-// not broken - the ".." check alone blocks the CVE POC in #241.
+// validateMediaPath decides whether a file may be sent. It closes CWE-22 (Path Traversal) by
+// refusing paths that contain ".." and, when WHATSAPP_MEDIA_ROOTS is set, restricting reads to
+// that list of directories. It also always refuses the bridge's own store/ (session keys and
+// message history) and, unless a WHATSAPP_MEDIA_ROOTS entry covers them, hidden paths such as
+// ~/.ssh or .env, so a prompt-injected send cannot exfiltrate secrets.
 func validateMediaPath(mediaPath string) error {
+	var roots []string
+	for _, root := range strings.Split(os.Getenv("WHATSAPP_MEDIA_ROOTS"), string(os.PathListSeparator)) {
+		if root != "" {
+			roots = append(roots, root)
+		}
+	}
+	storeDir, err := filepath.Abs("store")
+	if err != nil {
+		return fmt.Errorf("cannot locate the bridge store: %v", err)
+	}
+	return checkMediaPath(mediaPath, roots, storeDir)
+}
+
+// resolvePath returns the absolute path with symlinks resolved; a path that does not exist yet
+// keeps its absolute form
+func resolvePath(p string) (string, error) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	if real, err := filepath.EvalSymlinks(abs); err == nil {
+		return filepath.Clean(real), nil
+	}
+	return filepath.Clean(abs), nil
+}
+
+// within reports whether path is dir or inside it
+func within(path, dir string) bool {
+	return path == dir || strings.HasPrefix(path, dir+string(os.PathSeparator))
+}
+
+// hiddenComponent returns the first path component of rel starting with ".", or ""
+func hiddenComponent(rel string) string {
+	for _, part := range strings.Split(rel, string(os.PathSeparator)) {
+		if strings.HasPrefix(part, ".") && part != "." {
+			return part
+		}
+	}
+	return ""
+}
+
+func checkMediaPath(mediaPath string, roots []string, storeDir string) error {
 	if mediaPath == "" {
 		return fmt.Errorf("media_path is empty")
 	}
 	if strings.Contains(mediaPath, "..") {
 		return fmt.Errorf("media_path must not contain \"..\"")
-	}
-	roots := strings.Split(os.Getenv("WHATSAPP_MEDIA_ROOTS"), string(os.PathListSeparator))
-	if len(roots) == 0 || (len(roots) == 1 && roots[0] == "") {
-		return nil
 	}
 	abs, err := filepath.Abs(mediaPath)
 	if err != nil {
@@ -323,22 +359,28 @@ func validateMediaPath(mediaPath string) error {
 	if err != nil {
 		return fmt.Errorf("cannot resolve media_path: %v", err)
 	}
+	real = filepath.Clean(real)
+
+	if store, err := resolvePath(storeDir); err == nil && within(real, store) {
+		return fmt.Errorf("media_path is inside the bridge's store/, which is never sent")
+	}
+
+	if len(roots) == 0 {
+		if part := hiddenComponent(real); part != "" {
+			return fmt.Errorf("media_path is under the hidden path component %q; add a folder to WHATSAPP_MEDIA_ROOTS to send from it", part)
+		}
+		return nil
+	}
 	for _, root := range roots {
-		if root == "" {
+		rootReal, err := resolvePath(root)
+		if err != nil || !within(real, rootReal) {
 			continue
 		}
-		rootAbs, err := filepath.Abs(root)
-		if err != nil {
-			continue
+		// Hidden components of the root itself were chosen deliberately; any below it were not
+		if part := hiddenComponent(strings.TrimPrefix(real, rootReal)); part != "" {
+			return fmt.Errorf("media_path is under the hidden path component %q inside a WHATSAPP_MEDIA_ROOTS entry", part)
 		}
-		rootReal, err := filepath.EvalSymlinks(rootAbs)
-		if err != nil {
-			rootReal = rootAbs
-		}
-		rootClean := filepath.Clean(rootReal)
-		if real == rootClean || strings.HasPrefix(real, rootClean+string(os.PathSeparator)) {
-			return nil
-		}
+		return nil
 	}
 	return fmt.Errorf("media_path is not under any WHATSAPP_MEDIA_ROOTS entry")
 }
@@ -963,55 +1005,10 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 	// On-demand history for one chat: POST requests it, GET reads its status
 	http.HandleFunc("/api/history/backfill", newClientBackfillService(client, messageStore).handleHistoryBackfill)
 
-	http.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
-		// Only allow POST requests
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		// Parse the request body
-		var req SendMessageRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request format", http.StatusBadRequest)
-			return
-		}
-
-		// Validate request
-		if req.Recipient == "" {
-			http.Error(w, "Recipient is required", http.StatusBadRequest)
-			return
-		}
-
-		if req.Message == "" && req.MediaPath == "" {
-			http.Error(w, "Message or media path is required", http.StatusBadRequest)
-			return
-		}
-
-		// Never log the media path; the text only with content logging on
-		if logContent {
-			fmt.Printf("Send request to %s (media=%v, mentions=%d): %s\n", req.Recipient, req.MediaPath != "", len(req.Mentions), req.Message)
-		} else {
-			fmt.Printf("Send request to %s (media=%v, mentions=%d, %d chars)\n", req.Recipient, req.MediaPath != "", len(req.Mentions), utf8.RuneCountInString(req.Message))
-		}
-
-		// Send the message
-		success, message := sendWhatsAppMessage(client, messageStore, req.Recipient, req.Message, req.MediaPath, req.Mentions, logger)
-		fmt.Printf("Send result: success=%v, %s\n", success, sendResultForLog(message, logContent))
-		// Set response headers
-		w.Header().Set("Content-Type", "application/json")
-
-		// Set appropriate status code
-		if !success {
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-
-		// Send response
-		json.NewEncoder(w).Encode(SendMessageResponse{
-			Success: success,
-			Message: message,
-		})
-	})
+	http.HandleFunc("/api/send", newSendHandler(newSendGuard(sendGuardCfg, func(jid types.JID) types.JID { return resolveLID(client, jid) }, time.Now),
+		func(req SendMessageRequest) (bool, string) {
+			return sendWhatsAppMessage(client, messageStore, req.Recipient, req.Message, req.MediaPath, req.Mentions, logger)
+		}))
 
 	// Handler for downloading media
 	http.HandleFunc("/api/download", func(w http.ResponseWriter, r *http.Request) {
@@ -1137,6 +1134,13 @@ func main() {
 	// Message listeners and webhook delivery
 	setupListeners(messageStore, loadWebhookConfig(), 8080, logger)
 	logContent = loadLogContent()
+	cfg, err := loadSendGuardConfig()
+	if err != nil {
+		logger.Errorf("%v", err)
+		os.Exit(1)
+	}
+	sendGuardCfg = cfg
+	logger.Infof("Send guardrails: %s", sendGuardCfg)
 
 	// Setup event handling for messages and history sync
 	client.AddEventHandler(func(evt interface{}) {

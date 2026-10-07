@@ -126,6 +126,11 @@ func validateWebhookURL(raw string, p urlPolicy) error {
 	if u.Scheme == "http" && !isLocalHost(host) {
 		return errors.New("webhook_url must use https for public hosts (plain http is only allowed for localhost and private networks)")
 	}
+	// Without an allowlist only local targets are accepted, so a prompt-injected listener cannot
+	// post messages to the internet
+	if len(p.allowedHosts) == 0 && !isLocalHost(host) {
+		return fmt.Errorf("webhook_url host %q is not local; list it in WEBHOOK_ALLOWED_HOSTS to allow it", host)
+	}
 	if p.pointsAtSelf(host, defaultPort(u)) {
 		return errors.New("webhook_url must not point at the bridge's own API")
 	}
@@ -144,13 +149,17 @@ func forbiddenAddr(addr netip.Addr) bool {
 }
 
 // forbiddenIP is forbiddenAddr for a resolved address and port, also refusing the bridge itself
-func forbiddenIP(ip net.IP, port int, self netip.AddrPort) bool {
+// and, unless public targets are allowed (WEBHOOK_ALLOWED_HOSTS is set), any public address
+func forbiddenIP(ip net.IP, port int, self netip.AddrPort, allowPublic bool) bool {
 	addr, ok := netip.AddrFromSlice(ip)
 	if !ok {
 		return true
 	}
 	addr = addr.Unmap()
 	if forbiddenAddr(addr) {
+		return true
+	}
+	if !allowPublic && !addr.IsLoopback() && !addr.IsPrivate() {
 		return true
 	}
 	if self.IsValid() && port == int(self.Port()) {
@@ -164,7 +173,7 @@ func forbiddenIP(ip net.IP, port int, self netip.AddrPort) bool {
 
 // dialControl rejects forbidden addresses after DNS resolution, so a host name that resolves (or
 // later re-resolves) somewhere dangerous cannot bypass the save-time checks
-func dialControl(self netip.AddrPort) func(network, address string, c syscall.RawConn) error {
+func dialControl(p urlPolicy) func(network, address string, c syscall.RawConn) error {
 	return func(network, address string, _ syscall.RawConn) error {
 		host, portStr, err := net.SplitHostPort(address)
 		if err != nil {
@@ -172,7 +181,7 @@ func dialControl(self netip.AddrPort) func(network, address string, c syscall.Ra
 		}
 		var port int
 		fmt.Sscan(portStr, &port)
-		if forbiddenIP(net.ParseIP(host), port, self) {
+		if forbiddenIP(net.ParseIP(host), port, p.self, len(p.allowedHosts) > 0) {
 			return fmt.Errorf("connection to %s refused by the webhook URL policy", host)
 		}
 		return nil

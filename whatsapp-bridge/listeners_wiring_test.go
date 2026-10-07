@@ -23,7 +23,7 @@ func TestHistorySyncNeverFiresListeners(t *testing.T) {
 	t.Cleanup(func() { listenerRegistry, webhookDeliverer = prevRegistry, prevDeliverer })
 	listenerRegistry = NewListenerRegistry(0, time.Now)
 	listenerRegistry.Reload(store)
-	webhookDeliverer = NewDeliverer(store, waLog.Noop, 8, 1, time.Second, testSelf)
+	webhookDeliverer = NewDeliverer(store, waLog.Noop, 8, 1, time.Second, urlPolicy{self: testSelf})
 	t.Cleanup(func() { webhookDeliverer.Shutdown(time.Second) })
 
 	now := time.Now()

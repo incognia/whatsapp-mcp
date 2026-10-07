@@ -24,7 +24,10 @@ func TestValidateWebhookURL(t *testing.T) {
 		{"file scheme", "file:///etc/passwd", policy, "http or https"},
 		{"gopher scheme", "gopher://example.com", policy, "http or https"},
 		{"plain http public", "http://hooks.example.com/wa", policy, "https for public hosts"},
-		{"https public", "https://hooks.example.com/wa", policy, ""},
+		{"https public refused by default", "https://hooks.example.com/wa", policy, "WEBHOOK_ALLOWED_HOSTS"},
+		{"host name refused by default", "https://n8n.home.example/hook", policy, "WEBHOOK_ALLOWED_HOSTS"},
+		{"public ip refused by default", "https://93.184.216.34/hook", policy, "WEBHOOK_ALLOWED_HOSTS"},
+		{"https public listed", "https://hooks.example.com/wa", urlPolicy{self: testSelf, allowedHosts: []string{"hooks.example.com"}}, ""},
 		{"local automation", "http://127.0.0.1:5678/webhook/wa", policy, ""},
 		{"localhost", "http://localhost:5678/hook", policy, ""},
 		{"private network", "http://192.168.100.20/hook", policy, ""},
@@ -32,10 +35,10 @@ func TestValidateWebhookURL(t *testing.T) {
 		{"bridge itself", "http://127.0.0.1:8080/api/send", policy, "bridge's own API"},
 		{"bridge via localhost", "http://localhost:8080/api/send", policy, "bridge's own API"},
 		{"bridge via other loopback", "http://127.0.0.2:8080/api/send", policy, "bridge's own API"},
-		{"credentials", "https://user:pass@hooks.example.com/wa", policy, "user name or password"},
+		{"credentials", "https://user:pass@hooks.example.com/wa", allow, "user name or password"},
 		{"no host", "https:///wa", policy, "must have a host"},
 		{"metadata literal", "http://169.254.169.254/latest", policy, "link-local"},
-		{"too long", "https://hooks.example.com/" + strings.Repeat("a", maxWebhookURLLength), policy, "longer than"},
+		{"too long", "https://hooks.example.com/" + strings.Repeat("a", maxWebhookURLLength), allow, "longer than"},
 		{"empty", "", policy, "required"},
 		{"allowlist hit", "https://n8n.example.org/hook", allow, ""},
 		{"allowlist suffix", "https://a.hooks.example.com/hook", allow, ""},
@@ -73,29 +76,33 @@ func TestMaskURLAndLogTarget(t *testing.T) {
 
 func TestForbiddenIP(t *testing.T) {
 	cases := []struct {
-		ip        string
-		port      int
-		forbidden bool
+		ip          string
+		port        int
+		allowPublic bool
+		forbidden   bool
 	}{
-		{"169.254.169.254", 80, true},
-		{"fe80::1", 80, true},
-		{"0.0.0.0", 80, true},
-		{"224.0.0.1", 80, true},
-		{"255.255.255.255", 80, true},
-		{"127.0.0.1", 8080, true}, // the bridge itself
-		{"127.0.0.1", 5678, false},
-		{"192.168.1.10", 8080, false},
-		{"93.184.216.34", 443, false},
+		{"169.254.169.254", 80, true, true},
+		{"fe80::1", 80, true, true},
+		{"0.0.0.0", 80, true, true},
+		{"224.0.0.1", 80, true, true},
+		{"255.255.255.255", 80, true, true},
+		{"127.0.0.1", 8080, true, true}, // the bridge itself
+		{"127.0.0.1", 5678, false, false},
+		{"192.168.1.10", 8080, false, false},
+		{"fd00::1", 443, false, false},
+		{"93.184.216.34", 443, false, true}, // public, no WEBHOOK_ALLOWED_HOSTS
+		{"93.184.216.34", 443, true, false}, // public, allowlist set
+		{"::ffff:93.184.216.34", 443, false, true},
 	}
 	for _, tc := range cases {
-		if got := forbiddenIP(net.ParseIP(tc.ip), tc.port, testSelf); got != tc.forbidden {
+		if got := forbiddenIP(net.ParseIP(tc.ip), tc.port, testSelf, tc.allowPublic); got != tc.forbidden {
 			t.Errorf("forbiddenIP(%s:%d) = %v, want %v", tc.ip, tc.port, got, tc.forbidden)
 		}
 	}
 }
 
 func TestDialControlRefusesMetadataBeforeConnecting(t *testing.T) {
-	client := newWebhookHTTPClient(2*time.Second, testSelf)
+	client := newWebhookHTTPClient(2*time.Second, urlPolicy{self: testSelf})
 	start := time.Now()
 	_, err := client.Post("http://169.254.169.254/latest/meta-data", "application/json", nil)
 	if err == nil || !strings.Contains(err.Error(), "refused by the webhook URL policy") {

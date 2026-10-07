@@ -2,6 +2,8 @@ import sqlite3
 
 import pytest
 
+from conftest import text_of
+
 from whatsapp import get_chat, get_direct_chat_by_contact, list_chats
 
 DRIFTED = "5215591111111@s.whatsapp.net"
@@ -40,7 +42,7 @@ def by_jid(chats):
 
 def test_drifted_chat_shows_its_newest_message(last_message_store):
     chat = by_jid(list_chats(limit=1000))[DRIFTED]
-    assert chat.last_message == "see you"
+    assert text_of(chat.last_message) == "see you"
 
 
 def test_same_second_messages_give_one_deterministic_row(last_message_store):
@@ -49,14 +51,14 @@ def test_same_second_messages_give_one_deterministic_row(last_message_store):
     tied = [c for c in first if c.jid == TIED]
     assert len(tied) == 1
     # Latest inserted wins the tie, the same on every call
-    assert tied[0].last_message == "second in the second"
+    assert text_of(tied[0].last_message) == "second in the second"
     assert tied[0].last_is_from_me == 1
     assert by_jid(second)[TIED].last_message == tied[0].last_message
 
 
 def test_chat_without_messages_is_listed_empty(last_message_store):
     chat = by_jid(list_chats(limit=1000))[EMPTY]
-    assert (chat.last_message, chat.last_sender, chat.last_is_from_me) == (None, None, None)
+    assert (text_of(chat.last_message), chat.last_sender, chat.last_is_from_me) == (None, None, None)
 
 
 def test_no_duplicate_chats(last_message_store):
@@ -65,12 +67,12 @@ def test_no_duplicate_chats(last_message_store):
 
 
 def test_query_filter_keeps_newest_message(last_message_store):
-    assert [(c.jid, c.last_message) for c in list_chats(query="drifted")] == [(DRIFTED, "see you")]
+    assert [(c.jid, text_of(c.last_message)) for c in list_chats(query="drifted")] == [(DRIFTED, "see you")]
 
 
 def test_get_chat_reports_newest_message(last_message_store):
-    assert get_chat(DRIFTED).last_message == "see you"
-    assert get_chat(TIED).last_message == "second in the second"
+    assert text_of(get_chat(DRIFTED).last_message) == "see you"
+    assert text_of(get_chat(TIED).last_message) == "second in the second"
     assert get_chat(EMPTY).last_message is None
 
 
@@ -85,5 +87,5 @@ def test_get_chat_unknown_jid(last_message_store):
 
 
 def test_get_direct_chat_by_contact_reports_newest_message(last_message_store):
-    assert get_direct_chat_by_contact("5215591111111").last_message == "see you"
-    assert get_direct_chat_by_contact("5215592222222").last_message == "second in the second"
+    assert text_of(get_direct_chat_by_contact("5215591111111").last_message) == "see you"
+    assert text_of(get_direct_chat_by_contact("5215592222222").last_message) == "second in the second"
