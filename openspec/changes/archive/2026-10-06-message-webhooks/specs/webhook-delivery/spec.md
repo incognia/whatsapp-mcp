@@ -8,7 +8,7 @@ Delivers each listener match to the listener's webhook as a signed JSON HTTP req
 For every message that fires a listener, the bridge SHALL send an HTTP `POST` to that listener's `webhook_url` with a JSON body and the headers `Content-Type: application/json`, `User-Agent: whatsapp-bridge-webhook/1`, `X-Webhook-Event`, `X-Webhook-Delivery` (a unique delivery ID that stays the same across retries) and `X-Webhook-Timestamp` (Unix seconds at the time of the attempt).
 
 #### Scenario: Matching message delivered
-- **WHEN** a message from Amelia fires the listener "Amelia" whose URL is `http://127.0.0.1:5678/webhook/wa`
+- **WHEN** a message from Ana fires the listener "Ana" whose URL is `http://127.0.0.1:5678/webhook/wa`
 - **THEN** the receiver gets one `POST` with `X-Webhook-Event: message` and a JSON body describing the message
 
 ### Requirement: Payload shape
@@ -19,17 +19,17 @@ The body of a message delivery SHALL be a JSON object with this shape, and field
   "version": 1,
   "event": "message",
   "delivery_id": "<unique id>",
-  "listener": {"id": 7, "name": "Amelia"},
+  "listener": {"id": 7, "name": "Ana"},
   "match_mode": "or",
   "matched": ["senders"],
   "message": {
     "id": "<WhatsApp message id>",
     "chat_jid": "5215512345678@s.whatsapp.net",
-    "chat_name": "Amelia",
+    "chat_name": "Ana",
     "is_group": false,
     "sender": "5215512345678",
     "sender_jid": "5215512345678@s.whatsapp.net",
-    "sender_name": "Amelia",
+    "sender_name": "Ana",
     "timestamp": "2026-10-06T18:04:05Z",
     "content": "¿Quién está de guardia?",
     "media_type": "",
@@ -43,8 +43,8 @@ The body of a message delivery SHALL be a JSON object with this shape, and field
 `matched` SHALL list the names of the set criteria that matched (`chat_jids`, `senders`, `contains`, `regex`, `mentions_me`), in that order. Chat and sender SHALL be the normalised phone-number forms the bridge stores; `chat_name` and `sender_name` SHALL be the best known names (contact name, then push name, then the phone number). `timestamp` SHALL be RFC 3339 in UTC. `content` SHALL be the stored text (captions included, LID mentions rewritten) and SHALL be at most 4,096 characters, truncated with `content_truncated: true` when longer. Media SHALL NOT be embedded; `media_type` and `filename` let the receiver fetch it through the existing download path.
 
 #### Scenario: Group message payload
-- **WHEN** Amelia writes in the DevSecOps group and a listener on that group fires
-- **THEN** the payload has `is_group: true`, `chat_jid` ending in `@g.us`, `chat_name` set to the group name, and `sender`/`sender_name` identifying Amelia
+- **WHEN** Ana writes in the Ops group and a listener on that group fires
+- **THEN** the payload has `is_group: true`, `chat_jid` ending in `@g.us`, `chat_name` set to the group name, and `sender`/`sender_name` identifying Ana
 
 #### Scenario: Image with caption
 - **WHEN** an image with a caption fires a listener

@@ -119,7 +119,7 @@ def list_chats(
     Args:
         query: Optional search term to filter chats. Ignores accents and case; every word must
             appear, in any order, in the chat name, its JID or, for individual chats, the
-            contact's address-book names (so "maayan" finds a chat stored under a bare number)
+            contact's address-book names (so "noa" finds a chat stored under a bare number)
         limit: Maximum number of chats to return (default 20)
         page: Page number for pagination (default 0)
         include_last_message: Whether to include the last message in each chat (default True)

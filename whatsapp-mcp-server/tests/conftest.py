@@ -20,7 +20,7 @@ CHATS = [
     ("5215522222222@s.whatsapp.net", "Rubén Torres", "2026-10-06 08:00:00-06:00"),
     ("5215533333333@s.whatsapp.net", "Ana López", "2026-10-06 07:00:00-06:00"),
     ("5215544444444@s.whatsapp.net", "Mariana Ruiz", "2026-10-06 06:00:00-06:00"),
-    # Chat named by its number whose contact only exists in the address book as "Maayan Levy"
+    # Chat named by its number whose contact only exists in the address book as "Noa Peretz"
     ("9725550000001@s.whatsapp.net", "9725550000001", "2026-10-06 05:00:00-06:00"),
     ("120363000000000001@g.us", "Familia García", "2026-10-06 04:00:00-06:00"),
     ("status@broadcast", "status", "2026-10-06 03:00:00-06:00"),
@@ -33,7 +33,7 @@ CONTACTS = [
     ("111111111111111@lid", "", "", "Rubén García", ""),
     ("5215522222222@s.whatsapp.net", "Rubén", "Rubén Torres", "", ""),
     # Address-book-only contacts (no chat)
-    ("9725550000001@s.whatsapp.net", "Maayan", "Maayan Levy", "", ""),
+    ("9725550000001@s.whatsapp.net", "Noa", "Noa Peretz", "", ""),
     ("5215566666666@s.whatsapp.net", "", "Begoña Peña", "", ""),
     # Words spread across fields: saved first name only, the surname is in the profile name
     ("5215577777777@s.whatsapp.net", "Lupita", "", "Guadalupe Hernández", ""),

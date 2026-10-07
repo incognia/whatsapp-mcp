@@ -46,7 +46,7 @@ Filters applied before criteria, cheapest first: no enabled listeners → return
 
 A listener has five optional criteria (`chat_jids`, `senders`, `contains`, `regex`, `mentions_me`) and a `match_mode` of `or` or `and` over the set ones. Values inside one list are always alternatives.
 
-This differs from AdamRussak's trigger rows on purpose. With one row per value, "chat A or chat B, from Amelia" cannot be one AND listener, and "chat = A AND chat = B" is a listener that can never match — which is why ADR 0001 needed validation rules R3–R5 and a live validate call in the UI. Grouping values per field removes that whole class of impossible listeners, keeps the MCP tool signature simple (a model can fill `senders=[...]`, `contains=[...]` directly), and keeps "AND means AND" honest. What remains to validate is syntax (D6). The match-mode names (`or`/`and`), the default (`or`), and refusing unknown values instead of treating them as OR are taken from ADR 0001.
+This differs from AdamRussak's trigger rows on purpose. With one row per value, "chat A or chat B, from Ana" cannot be one AND listener, and "chat = A AND chat = B" is a listener that can never match — which is why ADR 0001 needed validation rules R3–R5 and a live validate call in the UI. Grouping values per field removes that whole class of impossible listeners, keeps the MCP tool signature simple (a model can fill `senders=[...]`, `contains=[...]` directly), and keeps "AND means AND" honest. What remains to validate is syntax (D6). The match-mode names (`or`/`and`), the default (`or`), and refusing unknown values instead of treating them as OR are taken from ADR 0001.
 
 Criterion details:
 
@@ -161,7 +161,7 @@ Routes use Go 1.22+ method patterns on the default mux (`POST /api/listeners`, `
 ### D11. Alternatives to webhooks considered
 
 - **SSE stream (`/api/events`, PRs #183 and #191)**: good for a process that stays connected, and the basis for MCP `resources/updated` notifications. It needs a long-lived consumer, loses events while nobody is connected, and most MCP clients do not surface resource notifications to the user today. It can reuse the same `Evaluate` output later as a second sink; deferred.
-- **MCP notifications only**: an MCP server runs only while a client session is open, so it cannot "tell me when Amelia writes" while the user is away.
+- **MCP notifications only**: an MCP server runs only while a client session is open, so it cannot "tell me when Ana writes" while the user is away.
 - **Polling `messages.db`**: works today with no bridge change, but adds latency and every consumer reimplements LID handling and mention detection.
 - **Listeners in a configuration file or environment variables** (AdamRussak's `webhooks.yaml.example`): simpler to review and version, and immune to API-planted listeners. It cannot be managed from an MCP client and requires a restart per change. A read-only `WEBHOOK_LISTENERS_FILE` loaded at start-up could be added later on top of the same registry; not in this change.
 

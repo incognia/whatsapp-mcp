@@ -8,7 +8,7 @@ from whatsapp import _match_rank, _query_words, normalise_text
     [
         ("Rubén García", "ruben garcia"),
         ("Begoña", "begona"),
-        ("MAAYAN", "maayan"),
+        ("NOA", "noa"),
         ("Straße", "strasse"),
         ("  José   Ramírez ", "jose ramirez"),
         ("", ""),

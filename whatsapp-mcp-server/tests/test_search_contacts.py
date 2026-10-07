@@ -26,7 +26,7 @@ def test_accented_query_finds_unaccented_name(stores):
 
 
 def test_case_is_ignored(stores):
-    assert "Maayan Levy" in names(search_contacts("MAAYAN"))
+    assert "Noa Peretz" in names(search_contacts("NOA"))
 
 
 def test_tilde_on_n_is_ignored(stores):
@@ -156,10 +156,10 @@ def test_blank_query_returns_empty_list(stores):
 
 
 def test_result_fields_unchanged(stores):
-    contact = search_contacts("maayan")[0]
+    contact = search_contacts("noa")[0]
     assert vars(contact) == {
         "phone_number": "9725550000001",
-        "name": "Maayan Levy",
+        "name": "Noa Peretz",
         "jid": "9725550000001@s.whatsapp.net",
     }
 
@@ -169,6 +169,6 @@ def test_result_fields_unchanged(stores):
 def test_searching_does_not_change_the_contact_store(stores):
     path = stores["whatsmeow"]
     before = (path.read_bytes(), os.stat(path).st_mtime_ns)
-    for query in ("ruben", "maayan", "5512345", "masivo", "   "):
+    for query in ("ruben", "noa", "5512345", "masivo", "   "):
         search_contacts(query)
     assert (path.read_bytes(), os.stat(path).st_mtime_ns) == before

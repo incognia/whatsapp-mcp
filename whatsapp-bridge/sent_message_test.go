@@ -69,7 +69,7 @@ func countRows(t *testing.T, store *MessageStore, msgID, chatJID string) int {
 func TestStoreSentMessageKinds(t *testing.T) {
 	ts := time.Date(2026, 10, 6, 17, 30, 15, 0, time.Local)
 	direct := types.NewJID("5215512345678", types.DefaultUserServer)
-	group := types.NewJID("120363422597955321", types.GroupServer)
+	group := types.NewJID("120363000000000011", types.GroupServer)
 
 	cases := []struct {
 		name          string
@@ -93,10 +93,10 @@ func TestStoreSentMessageKinds(t *testing.T) {
 			chat:  group,
 			msgID: "3EB0AAAAAAAA0002",
 			msg: &waProto.Message{ExtendedTextMessage: &waProto.ExtendedTextMessage{
-				Text:        ptr("@5215655362528 take a look"),
-				ContextInfo: &waProto.ContextInfo{MentionedJID: []string{"5215655362528@s.whatsapp.net"}},
+				Text:        ptr("@5215500000012 take a look"),
+				ContextInfo: &waProto.ContextInfo{MentionedJID: []string{"5215500000012@s.whatsapp.net"}},
 			}},
-			wantContent: "@5215655362528 take a look",
+			wantContent: "@5215500000012 take a look",
 		},
 		{
 			name:  "image with caption",

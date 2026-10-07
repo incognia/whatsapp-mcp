@@ -52,7 +52,7 @@ func TestValidateListenerRules(t *testing.T) {
 		{"long contains entry", func(l *Listener) { l.Contains = []string{strings.Repeat("a", 201)} }, nil, "contains"},
 		{"too many contains", func(l *Listener) { l.Contains = make([]string, 21); fill(l.Contains) }, nil, "contains"},
 		{"too many chats", func(l *Listener) { l.ChatJIDs = make([]string, 51); fillNumbers(l.ChatJIDs) }, nil, "chat_jids"},
-		{"bad sender", func(l *Listener) { l.Senders = []string{"amelia"} }, nil, "senders"},
+		{"bad sender", func(l *Listener) { l.Senders = []string{"ana"} }, nil, "senders"},
 		{"bad url", func(l *Listener) { l.WebhookURL = "http://hooks.example.com/wa" }, nil, "webhook_url"},
 		{"short secret", func(l *Listener) { l.Secret = "abc" }, nil, "secret"},
 		{"listener cap", nil, func(c *validationContext) { c.existingCount = 50 }, "listeners"},

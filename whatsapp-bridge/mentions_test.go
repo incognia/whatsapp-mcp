@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	ownPN  = types.NewJID("5215545163631", types.DefaultUserServer)
-	ownLID = types.NewJID("154653199175812", types.HiddenUserServer)
+	ownPN  = types.NewJID("5215500000000", types.DefaultUserServer)
+	ownLID = types.NewJID("100000000000001", types.HiddenUserServer)
 )
 
 func mentionText(jids ...string) *waProto.Message {
@@ -28,8 +28,8 @@ func TestMentionsOfTheAccount(t *testing.T) {
 		want   bool
 	}{
 		{"by LID", mentionText(ownLID.String()), ownLID, true},
-		{"by PN with device", mentionText("5215545163631:17@s.whatsapp.net"), ownLID, true},
-		{"someone else only", mentionText("5215515240897@s.whatsapp.net", "54314290651245@lid"), ownLID, false},
+		{"by PN with device", mentionText("5215500000000:17@s.whatsapp.net"), ownLID, true},
+		{"someone else only", mentionText("5215500000011@s.whatsapp.net", "100000000000002@lid"), ownLID, false},
 		{"own LID unknown, PN mention", mentionText(ownPN.String()), types.EmptyJID, true},
 		{"own LID unknown, LID mention", mentionText(ownLID.String()), types.EmptyJID, false},
 		{"ephemeral wrapped", &waProto.Message{EphemeralMessage: &waProto.FutureProofMessage{Message: mentionText(ownLID.String())}}, ownLID, true},

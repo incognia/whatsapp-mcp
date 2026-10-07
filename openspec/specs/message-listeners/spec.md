@@ -69,19 +69,19 @@ A message with no text (for example a voice note) SHALL NOT match `contains` or 
 A listener in `"or"` mode SHALL fire when at least one of its set criteria matches. A listener in `"and"` mode SHALL fire only when every set criterion matches. Criteria that are not set SHALL be ignored in both modes. Several values inside one list criterion SHALL always be alternatives (any of them), whatever the mode, so `chat_jids: [A, B]` in `"and"` mode means "in A or B, and every other set criterion".
 
 #### Scenario: OR fires on either criterion
-- **WHEN** a listener in `"or"` mode has `chat_jids: [DevSecOps group]` and `contains: ["guardia"]`, and a message saying "guardia" arrives in another chat
+- **WHEN** a listener in `"or"` mode has `chat_jids: [Ops group]` and `contains: ["guardia"]`, and a message saying "guardia" arrives in another chat
 - **THEN** the listener fires
 
 #### Scenario: AND requires every criterion
-- **WHEN** a listener in `"and"` mode has `chat_jids: [DevSecOps group]` and `contains: ["guardia"]`, and a message saying "guardia" arrives in another chat
+- **WHEN** a listener in `"and"` mode has `chat_jids: [Ops group]` and `contains: ["guardia"]`, and a message saying "guardia" arrives in another chat
 - **THEN** the listener does not fire
 
 #### Scenario: AND fires when every criterion matches
-- **WHEN** the same `"and"` listener sees "¿Quién está de guardia?" in the DevSecOps group
+- **WHEN** the same `"and"` listener sees "¿Quién está de guardia?" in the Ops group
 - **THEN** the listener fires
 
 #### Scenario: List values stay alternatives under AND
-- **WHEN** a listener in `"and"` mode has `chat_jids: [A, B]` and `senders: [Amelia]`, and Amelia writes in chat B
+- **WHEN** a listener in `"and"` mode has `chat_jids: [A, B]` and `senders: [Ana]`, and Ana writes in chat B
 - **THEN** the listener fires
 
 ### Requirement: Mentions of the account
@@ -100,7 +100,7 @@ A message SHALL count as mentioning the account when any JID in the message's me
 - **THEN** the listener does not fire
 
 #### Scenario: Mention in a specific group
-- **WHEN** a listener in `"and"` mode has `chat_jids: [DevSecOps group]` and `mentions_me: true`, and someone mentions the account in that group
+- **WHEN** a listener in `"and"` mode has `chat_jids: [Ops group]` and `mentions_me: true`, and someone mentions the account in that group
 - **THEN** the listener fires, and a mention of the account in any other group does not fire it
 
 ### Requirement: Own messages are ignored by default
@@ -118,7 +118,7 @@ Messages sent by the account itself (from any linked device or the phone) SHALL 
 Listeners SHALL be evaluated only for new messages received live by the bridge, after the bridge has stored them. The following SHALL NOT fire any listener: messages imported by history sync (initial or on-demand); edits of earlier messages; messages without text or media that the bridge does not store (reactions, receipts, protocol messages); status broadcasts (`status@broadcast`); and messages whose timestamp is older than the configured maximum age (`WEBHOOK_MAX_AGE`, default 15 minutes; `0` disables the check), which covers a backlog delivered after a long disconnection. Disabled listeners SHALL NOT fire.
 
 #### Scenario: History sync does not trigger
-- **WHEN** a history sync imports an old message from Amelia and a listener has `senders: [Amelia]`
+- **WHEN** a history sync imports an old message from Ana and a listener has `senders: [Ana]`
 - **THEN** the message is stored but no delivery is made
 
 #### Scenario: Stale backlog does not trigger
@@ -126,7 +126,7 @@ Listeners SHALL be evaluated only for new messages received live by the bridge, 
 - **THEN** no delivery is made
 
 #### Scenario: Edit does not trigger again
-- **WHEN** Amelia edits a message that already fired a listener
+- **WHEN** Ana edits a message that already fired a listener
 - **THEN** no further delivery is made for the edit
 
 #### Scenario: Disabled listener stays silent
@@ -206,7 +206,7 @@ A listener's `secret` SHALL never be returned by any endpoint or MCP tool, nor w
 The MCP server SHALL offer the tools `create_listener`, `list_listeners`, `delete_listener`, `set_listener_enabled` and `test_listener`, which call the bridge's listener endpoints and return their result, including validation errors, as structured data. When `WEBHOOK_ADMIN_TOKEN` is set in the MCP server's environment, the tools SHALL send it as a bearer token. The tools SHALL accept phone numbers and JIDs for chats and senders exactly as the REST API does.
 
 #### Scenario: Create a listener from an MCP client
-- **WHEN** an MCP client calls `create_listener` with `name: "Amelia"`, `senders: ["5215512345678"]` and `webhook_url: "http://127.0.0.1:5678/webhook/wa"`
+- **WHEN** an MCP client calls `create_listener` with `name: "Ana"`, `senders: ["5215512345678"]` and `webhook_url: "http://127.0.0.1:5678/webhook/wa"`
 - **THEN** the tool returns `success: true` with the new listener's `id`, and the listener appears in `list_listeners`
 
 #### Scenario: Validation errors reach the MCP client

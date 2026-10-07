@@ -24,8 +24,8 @@ def test_accent_insensitive_chat_filter(stores):
 
 
 def test_chat_found_through_address_book_name(stores):
-    # Stored as its bare number; only the address book knows it as "Maayan Levy"
-    chats = list_chats(query="maayan")
+    # Stored as its bare number; only the address book knows it as "Noa Peretz"
+    chats = list_chats(query="noa")
     assert jids(chats) == ["9725550000001@s.whatsapp.net"]
     # The reported name is unchanged
     assert chats[0].name == "9725550000001"

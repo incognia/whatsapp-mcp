@@ -30,7 +30,7 @@ const (
 var (
 	pnJID    = types.NewJID(pnUser, types.DefaultUserServer)
 	lidJID   = types.NewJID(lidUser, types.HiddenUserServer)
-	groupJID = types.NewJID("120363221312732027", types.GroupServer)
+	groupJID = types.NewJID("120363000000000012", types.GroupServer)
 )
 
 func knownPN(jid types.JID) types.JID {

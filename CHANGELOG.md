@@ -5,6 +5,8 @@
 <!-- markdownlint-disable MD013 MD024 MD022 MD032 -->
 ## [2026-10-07] - Project documentation, credits and agent guide
 
+- test: replace real phone numbers, LIDs, group JIDs and contact names in the Go and Python test fixtures with fictitious ones, as `CONTRIBUTING.md` requires
+- docs: use the same fictitious names in the main specs, the archived OpenSpec changes and a `list_chats` docstring example
 - docs: archive the completed `prompt-injection-guardrails` OpenSpec change, add its two new main specs `openspec/specs/send-guardrails/spec.md` and `openspec/specs/untrusted-content/spec.md`, and replace the "Webhook URL safety policy" requirement in `openspec/specs/webhook-delivery/spec.md`, leaving no active changes
 - fix: never send a file inside the bridge's own `store/` (session keys and message history), and refuse any `media_path` with a hidden component such as `~/.ssh`, `~/.aws` or `.env` unless a `WHATSAPP_MEDIA_ROOTS` entry deliberately includes that folder, answering `400` without reading the file, so a prompt-injected send cannot exfiltrate secrets
 - feat: add `WHATSAPP_READ_ONLY` (`true` or `1`): the bridge refuses every send and every listener create, update and test delivery with `403`, while reads, history backfill, listing and deleting listeners keep working; the MCP server, given the same variable, no longer offers `send_message`, `send_file`, `send_audio_message`, `create_listener`, `set_listener_enabled` and `test_listener`

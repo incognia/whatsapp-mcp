@@ -18,8 +18,8 @@ The `search_contacts` tool SHALL compare the query against contact names after r
 - **THEN** the results include "Jose Ramirez"
 
 #### Scenario: Case is ignored
-- **WHEN** the address book contains "Maayan Levy" and `search_contacts` is called with "MAAYAN"
-- **THEN** the results include "Maayan Levy"
+- **WHEN** the address book contains "Noa Peretz" and `search_contacts` is called with "NOA"
+- **THEN** the results include "Noa Peretz"
 
 #### Scenario: Tilde on n is ignored
 - **WHEN** the address book contains "Begoña Peña" and `search_contacts` is called with "begona pena"
@@ -59,8 +59,8 @@ The `search_contacts` tool SHALL match contacts by phone number, ignoring a lead
 The `search_contacts` tool SHALL search both the individual chats stored by the bridge and every contact in WhatsApp's own contact store (saved full name, first name, WhatsApp profile name and business name), so that contacts without any message history are found.
 
 #### Scenario: Contact without message history
-- **WHEN** "Maayan Levy" exists in the contact store but has no chat in the message store, and `search_contacts` is called with "maayan"
-- **THEN** the results include "Maayan Levy" with its phone number and phone-number JID
+- **WHEN** "Noa Peretz" exists in the contact store but has no chat in the message store, and `search_contacts` is called with "noa"
+- **THEN** the results include "Noa Peretz" with its phone number and phone-number JID
 
 #### Scenario: Chat named only by its number
 - **WHEN** a chat's stored name is its bare phone number and the contact store has the full name "Rubén García" for the same JID, and `search_contacts` is called with "ruben"
@@ -137,7 +137,7 @@ The `query` filter of the `list_chats` tool SHALL match a chat when every query 
 - **THEN** that group is among the results
 
 #### Scenario: Chat found through its contact's address-book name
-- **WHEN** an individual chat's stored name is its bare phone number, the contact store names that JID "Maayan Levy", and `list_chats` is called with query "maayan"
+- **WHEN** an individual chat's stored name is its bare phone number, the contact store names that JID "Noa Peretz", and `list_chats` is called with query "noa"
 - **THEN** that chat is among the results
 
 #### Scenario: Pagination after filtering

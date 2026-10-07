@@ -20,8 +20,8 @@ func testLIDLookup(jid types.JID) (types.JID, bool) {
 func TestListenerStoreRoundTrip(t *testing.T) {
 	store := openTestStore(t)
 	in := Listener{
-		Name: "Amelia", Enabled: false, MatchMode: "and",
-		ChatJIDs: []string{"120363422597955321@g.us"}, Senders: []string{"5215515240897"},
+		Name: "Ana", Enabled: false, MatchMode: "and",
+		ChatJIDs: []string{"120363000000000011@g.us"}, Senders: []string{"5215500000011"},
 		Contains: []string{"guardia", "incidente"}, Regex: `(?i)p[12]`, MentionsMe: true, IncludeFromMe: true,
 		WebhookURL: testWebhook, Secret: "s3cr3t-0123456789",
 	}
@@ -97,10 +97,10 @@ func TestNormaliseIdentities(t *testing.T) {
 	}
 
 	// A group is a valid chat but not a sender
-	if chat, err := normaliseChat("120363422597955321@g.us", testLIDLookup); err != nil || chat != "120363422597955321@g.us" {
+	if chat, err := normaliseChat("120363000000000011@g.us", testLIDLookup); err != nil || chat != "120363000000000011@g.us" {
 		t.Errorf("group chat = %q, %v", chat, err)
 	}
-	if _, err := normaliseSender("120363422597955321@g.us", testLIDLookup); err == nil {
+	if _, err := normaliseSender("120363000000000011@g.us", testLIDLookup); err == nil {
 		t.Error("group accepted as a sender")
 	}
 }

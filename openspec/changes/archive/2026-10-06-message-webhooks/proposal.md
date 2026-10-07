@@ -1,6 +1,6 @@
 ## Why
 
-The bridge only stores messages; to learn that "Amelia wrote", that "someone mentioned me in the DevSecOps group" or that a message contains "guardia", the user has to ask an MCP client to poll `list_messages`. Nothing outside the bridge can react to a message as it arrives. A small, safe notification path — listeners that match live messages and POST them to a webhook — turns the bridge into a real-time source for automations (n8n, Home Assistant, a local script, a phone push service) without giving anything new the ability to send on the account.
+The bridge only stores messages; to learn that "Ana wrote", that "someone mentioned me in the Ops group" or that a message contains "guardia", the user has to ask an MCP client to poll `list_messages`. Nothing outside the bridge can react to a message as it arrives. A small, safe notification path — listeners that match live messages and POST them to a webhook — turns the bridge into a real-time source for automations (n8n, Home Assistant, a local script, a phone push service) without giving anything new the ability to send on the account.
 
 ## What Changes
 

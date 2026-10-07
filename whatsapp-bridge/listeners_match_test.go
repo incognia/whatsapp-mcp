@@ -8,9 +8,9 @@ import (
 )
 
 const (
-	devSecOps = "120363422597955321@g.us"
-	otherChat = "120363221312732027@g.us"
-	amelia    = "5215515240897"
+	opsGroup  = "120363000000000011@g.us"
+	otherChat = "120363000000000012@g.us"
+	ana       = "5215500000011"
 )
 
 func compiled(t *testing.T, mutate func(*Listener)) *compiledListener {
@@ -37,61 +37,61 @@ func msgIn(chat, sender, text string) IncomingMessage {
 
 func TestCriterionSemantics(t *testing.T) {
 	contains := compiled(t, func(l *Listener) { l.Contains = []string{"guardia"} })
-	img := msgIn(otherChat, amelia, "Mañana me toca GUARDIA")
+	img := msgIn(otherChat, ana, "Mañana me toca GUARDIA")
 	img.MediaType = "image"
 	if _, ok := contains.match(img); !ok {
 		t.Error("contains should be case-insensitive and read captions")
 	}
 
-	voice := msgIn(otherChat, amelia, "")
+	voice := msgIn(otherChat, ana, "")
 	voice.MediaType = "audio"
 	if _, ok := contains.match(voice); ok {
 		t.Error("voice note without text matched contains")
 	}
 
 	re := compiled(t, func(l *Listener) { l.Regex = `(?i)\bincidente\s+P[12]\b` })
-	if _, ok := re.match(msgIn(otherChat, amelia, "Incidente p1 en producción")); !ok {
+	if _, ok := re.match(msgIn(otherChat, ana, "Incidente p1 en producción")); !ok {
 		t.Error("regex with (?i) should match")
 	}
 	strict := compiled(t, func(l *Listener) { l.Regex = `Incidente` })
-	if _, ok := strict.match(msgIn(otherChat, amelia, "incidente")); ok {
+	if _, ok := strict.match(msgIn(otherChat, ana, "incidente")); ok {
 		t.Error("regex is case-sensitive without flags")
 	}
 
-	byJID := compiled(t, func(l *Listener) { l.Senders = []string{amelia} })
+	byJID := compiled(t, func(l *Listener) { l.Senders = []string{ana} })
 	m := msgIn(otherChat, "", "hola")
-	m.SenderJID = amelia + "@s.whatsapp.net"
+	m.SenderJID = ana + "@s.whatsapp.net"
 	if _, ok := byJID.match(m); !ok {
 		t.Error("senders should also match the sender JID")
 	}
 }
 
 func TestMatchModes(t *testing.T) {
-	or := compiled(t, func(l *Listener) { l.ChatJIDs = []string{devSecOps}; l.Contains = []string{"guardia"} })
+	or := compiled(t, func(l *Listener) { l.ChatJIDs = []string{opsGroup}; l.Contains = []string{"guardia"} })
 	and := compiled(t, func(l *Listener) {
 		l.MatchMode = "and"
-		l.ChatJIDs = []string{devSecOps}
+		l.ChatJIDs = []string{opsGroup}
 		l.Contains = []string{"guardia"}
 	})
 
-	elsewhere := msgIn(otherChat, amelia, "guardia")
+	elsewhere := msgIn(otherChat, ana, "guardia")
 	if matched, ok := or.match(elsewhere); !ok || strings.Join(matched, ",") != "contains" {
 		t.Errorf("OR elsewhere = %v %v", matched, ok)
 	}
 	if _, ok := and.match(elsewhere); ok {
 		t.Error("AND fired outside the chat")
 	}
-	inGroup := msgIn(devSecOps, amelia, "¿Quién está de guardia?")
+	inGroup := msgIn(opsGroup, ana, "¿Quién está de guardia?")
 	if matched, ok := and.match(inGroup); !ok || strings.Join(matched, ",") != "chat_jids,contains" {
 		t.Errorf("AND in group = %v %v", matched, ok)
 	}
 
 	lists := compiled(t, func(l *Listener) {
 		l.MatchMode = "and"
-		l.ChatJIDs = []string{devSecOps, otherChat}
-		l.Senders = []string{amelia}
+		l.ChatJIDs = []string{opsGroup, otherChat}
+		l.Senders = []string{ana}
 	})
-	if _, ok := lists.match(msgIn(otherChat, amelia, "hola")); !ok {
+	if _, ok := lists.match(msgIn(otherChat, ana, "hola")); !ok {
 		t.Error("list values must stay alternatives under AND")
 	}
 }
@@ -99,19 +99,19 @@ func TestMatchModes(t *testing.T) {
 func TestMentionsMeCriterion(t *testing.T) {
 	inGroup := compiled(t, func(l *Listener) {
 		l.MatchMode = "and"
-		l.ChatJIDs = []string{devSecOps}
+		l.ChatJIDs = []string{opsGroup}
 		l.MentionsMe = true
 	})
-	m := msgIn(devSecOps, amelia, "@yo revisa esto")
+	m := msgIn(opsGroup, ana, "@yo revisa esto")
 	m.MentionsMe = true
 	if matched, ok := inGroup.match(m); !ok || strings.Join(matched, ",") != "chat_jids,mentions_me" {
 		t.Errorf("mention in group = %v %v", matched, ok)
 	}
 	m.ChatJID = otherChat
 	if _, ok := inGroup.match(m); ok {
-		t.Error("mention in another group fired an AND listener on DevSecOps")
+		t.Error("mention in another group fired an AND listener on Ops")
 	}
-	m.ChatJID, m.MentionsMe = devSecOps, false
+	m.ChatJID, m.MentionsMe = opsGroup, false
 	if _, ok := inGroup.match(m); ok {
 		t.Error("message without a mention fired")
 	}
@@ -167,7 +167,7 @@ func TestEvaluateFilters(t *testing.T) {
 		func(l *Listener) { l.Contains = []string{"guardia"}; l.Enabled = false },
 	)
 	base := func() IncomingMessage {
-		m := msgIn(devSecOps, amelia, "guardia")
+		m := msgIn(opsGroup, ana, "guardia")
 		m.Timestamp = now.Add(-time.Minute)
 		return m
 	}
@@ -203,10 +203,10 @@ func TestEvaluateFilters(t *testing.T) {
 }
 
 func TestPayloadForGroupMessage(t *testing.T) {
-	l := Listener{ID: 7, Name: "DevSecOps guardias", MatchMode: "and"}
+	l := Listener{ID: 7, Name: "Ops on-call", MatchMode: "and"}
 	m := IncomingMessage{
-		ID: "3EB0ABC", ChatJID: devSecOps, ChatName: "DevSecOps", Sender: amelia,
-		SenderJID: amelia + "@s.whatsapp.net", SenderName: "Amelia",
+		ID: "3EB0ABC", ChatJID: opsGroup, ChatName: "Ops", Sender: ana,
+		SenderJID: ana + "@s.whatsapp.net", SenderName: "Ana",
 		Timestamp: time.Date(2026, 10, 7, 0, 4, 5, 0, time.FixedZone("CST", -6*3600)),
 		Content:   "¿Quién está de guardia?",
 	}
@@ -214,10 +214,10 @@ func TestPayloadForGroupMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	golden := `{"version":1,"event":"message","delivery_id":"d-1","listener":{"id":7,"name":"DevSecOps guardias"},` +
-		`"match_mode":"and","matched":["chat_jids","contains"],"message":{"id":"3EB0ABC","chat_jid":"120363422597955321@g.us",` +
-		`"chat_name":"DevSecOps","is_group":true,"sender":"5215515240897","sender_jid":"5215515240897@s.whatsapp.net",` +
-		`"sender_name":"Amelia","timestamp":"2026-10-07T06:04:05Z","content":"¿Quién está de guardia?","media_type":"",` +
+	golden := `{"version":1,"event":"message","delivery_id":"d-1","listener":{"id":7,"name":"Ops on-call"},` +
+		`"match_mode":"and","matched":["chat_jids","contains"],"message":{"id":"3EB0ABC","chat_jid":"120363000000000011@g.us",` +
+		`"chat_name":"Ops","is_group":true,"sender":"5215500000011","sender_jid":"5215500000011@s.whatsapp.net",` +
+		`"sender_name":"Ana","timestamp":"2026-10-07T06:04:05Z","content":"¿Quién está de guardia?","media_type":"",` +
 		`"filename":"","is_from_me":false,"mentions_me":false}}`
 	if string(body) != golden {
 		t.Errorf("payload:\n got %s\nwant %s", body, golden)

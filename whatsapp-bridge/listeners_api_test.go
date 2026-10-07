@@ -62,7 +62,7 @@ func (h *apiHarness) do(method, path, body string, mutate ...func(*http.Request)
 	return rr.Code, parsed, rr.Header()
 }
 
-const createBody = `{"name":"Amelia","senders":["+52 1 55 1524 0897"],"contains":["guardia"],
+const createBody = `{"name":"Ana","senders":["+52 1 55 0000 0011"],"contains":["guardia"],
 	"webhook_url":"http://127.0.0.1:5678/webhook/wa?auth=abc123","secret":"s3cr3t-0123456789"}`
 
 func listenerField(body map[string]interface{}, field string) interface{} {
@@ -83,7 +83,7 @@ func TestListenerCRUD(t *testing.T) {
 	if listenerField(body, "webhook_url") != "http://127.0.0.1:5678/webhook/wa?auth=***" {
 		t.Errorf("url not masked: %v", listenerField(body, "webhook_url"))
 	}
-	if s := listenerField(body, "senders").([]interface{}); s[0] != "5215515240897" {
+	if s := listenerField(body, "senders").([]interface{}); s[0] != "5215500000011" {
 		t.Errorf("sender not normalised: %v", s)
 	}
 	if len(h.reg.Snapshot()) != 1 {
@@ -160,7 +160,7 @@ func TestListenerAPIErrors(t *testing.T) {
 	if code, _, _ = h.do("PUT", "/api/listeners/1", `{}`); code != 405 {
 		t.Errorf("wrong method on item: %d", code)
 	}
-	code, body, _ = h.do("POST", "/api/listeners", `{"name":"x","sender":["5215515240897"],"webhook_url":"http://127.0.0.1:5678/h"}`)
+	code, body, _ = h.do("POST", "/api/listeners", `{"name":"x","sender":["5215500000011"],"webhook_url":"http://127.0.0.1:5678/h"}`)
 	if code != 400 || !strings.Contains(body["error"].(string), "unknown field") {
 		t.Errorf("unknown field: %d %v", code, body)
 	}

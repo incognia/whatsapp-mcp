@@ -82,7 +82,7 @@ func newTestDeliverer(t *testing.T, queue, workers int, timeout time.Duration) (
 func testJob(listenerID int64, url, secret string) DeliveryJob {
 	return DeliveryJob{
 		ListenerID: listenerID, ListenerName: "test", URL: url, Secret: secret,
-		DeliveryID: newDeliveryID(), Event: "message", MessageID: "3EB0TEST", ChatJID: devSecOps,
+		DeliveryID: newDeliveryID(), Event: "message", MessageID: "3EB0TEST", ChatJID: opsGroup,
 		Body: []byte(`{"version":1,"message":{"content":"secret text"}}`), CreatedAt: time.Now(),
 	}
 }
@@ -274,7 +274,7 @@ func TestBoundedAsynchronousDelivery(t *testing.T) {
 	var accepted atomic.Int32
 	start := time.Now()
 	for i := 0; i < 21; i++ {
-		m := msgIn(devSecOps, amelia, "guardia")
+		m := msgIn(opsGroup, ana, "guardia")
 		m.ID = "BURST" + strconv.Itoa(i)
 		for _, job := range r.Evaluate(m) {
 			job.URL = recv.srv.URL

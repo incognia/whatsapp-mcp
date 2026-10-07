@@ -5,7 +5,7 @@
 
 ## 2. Normalisation and matching helpers (`whatsapp.py`)
 
-- [x] 2.1 Add `WHATSMEOW_DB_PATH` (next to `MESSAGES_DB_PATH`) and `normalise_text(text)` (NFKD, drop combining marks, `casefold()`, collapse whitespace; `None`/empty → `""`) per design D1; verify with `tests/test_normalise.py` cases "Rubén García" → "ruben garcia", "Begoña" → "begona", "MAAYAN" → "maayan", "Straße" → "strasse"
+- [x] 2.1 Add `WHATSMEOW_DB_PATH` (next to `MESSAGES_DB_PATH`) and `normalise_text(text)` (NFKD, drop combining marks, `casefold()`, collapse whitespace; `None`/empty → `""`) per design D1; verify with `tests/test_normalise.py` cases "Rubén García" → "ruben garcia", "Begoña" → "begona", "NOA" → "noa", "Straße" → "strasse"
 - [x] 2.2 Add `_query_words(query)` (normalised words; phone-like queries collapsed to one digits-only word) and `_match_rank(words, haystack)` returning `None` for no match, `0` when every word starts a word of the haystack and `1` for inside-word matches, per design D4; verify unit tests for any word order, partial words, all-words-required, "+52 1 55 1234 5678" → "5215512345678", and blank query → no words
 
 ## 3. Read-only address book (`whatsapp.py`)

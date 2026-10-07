@@ -5,7 +5,7 @@ The `search_contacts` MCP tool only runs a case-insensitive SQL `LIKE '%query%'`
 ## What Changes
 
 - `search_contacts` searches a merged contact set: the non-group chats in `messages.db` plus the full address book in whatsmeow's `whatsmeow_contacts` (`full_name`, `first_name`, `push_name`, `business_name`), opened strictly read-only.
-- Matching becomes accent-insensitive and case-insensitive (Unicode normalisation that strips diacritics and case-folds both the query and the candidate names), so "ruben" matches "Rubén" and "MAAYAN" matches "Maayan".
+- Matching becomes accent-insensitive and case-insensitive (Unicode normalisation that strips diacritics and case-folds both the query and the candidate names), so "ruben" matches "Rubén" and "NOA" matches "Noa".
 - Multi-word queries match when every word appears somewhere in the contact's names or phone number, in any order ("garcia ruben" finds "Rubén García").
 - Address-book entries keyed by LID JIDs (`@lid`) are translated to their phone-number JID through `whatsmeow_lid_map`, so results use the same phone-number JIDs as the chats stored by the bridge, and one person appears once, not once per JID or per source.
 - Results stay limited to 50, are ordered deterministically (better matches first, then by name), and keep the existing `phone_number`, `name` and `jid` fields, so the tool contract stays backward compatible.
