@@ -5,6 +5,12 @@
 <!-- markdownlint-disable MD013 MD024 MD022 MD032 -->
 ## [2026-10-06] - Mentions on send and a fixed `store/` path
 
+- feat: add message listeners that watch live, stored messages by chat, sender, text (`contains`, captions included), RE2 `regex` and `mentions_me` (by phone number or LID), combined with an `or`/`and` match mode, ignoring the account's own messages unless `include_from_me` is set, and never firing for history sync, edits, status updates or messages older than `WEBHOOK_MAX_AGE` (model and match-mode naming from the AdamRussak fork, ADR 0001)
+- feat: deliver each match as a JSON `POST` signed with HMAC-SHA256 over a timestamp and the body, through a bounded queue and fixed worker pool, with up to 4 attempts and timer-based backoff, no redirects and a delivery log that never stores message content
+- feat: add the `/api/listeners` endpoints (create, list with last delivery, get, update, delete, validate, test delivery, delivery log) and the `create_listener`, `list_listeners`, `delete_listener`, `set_listener_enabled` and `test_listener` MCP tools; secrets are write-only and URL query values are masked
+- feat: add the first versioned, additive schema migration to `messages.db` (`PRAGMA user_version`), creating the `listeners` and `listener_deliveries` tables
+- fix: protect listener management from browser-forged requests (`Origin`, non-JSON bodies, foreign `Host`), require `WEBHOOK_ADMIN_TOKEN` when the API is not bound to loopback, and refuse webhook targets that are not `http(s)`, use plain `http` to public hosts, embed credentials, or resolve to link-local, metadata, multicast, broadcast or the bridge's own address
+- docs: document message listeners and webhooks, the signature check and the `WEBHOOK_*` settings in the README
 - docs: archive the completed `per-chat-history-sync` OpenSpec change and sync its delta into the new main spec `openspec/specs/history-backfill/spec.md`
 - docs: record in the `per-chat-history-sync` design that the phone answers on-demand requests addressed by a one-to-one chat's LID, verified live on a personal chat and a group
 - refactor: move the storage of each history sync conversation into `storeHistoryConversation`, with its client-dependent lookups injected, so history storage and backfill completion are tested without a live WhatsApp connection

@@ -985,3 +985,48 @@ def request_chat_history(chat_jid: str, count: int = 50) -> Dict:
 def get_chat_history_status(chat_jid: str) -> Dict:
     """Read the status of the latest history request for one chat."""
     return _backfill_call("GET", params={"chat_jid": chat_jid})
+
+
+def _listener_request(method: str, path: str, json_body: Optional[Dict] = None) -> Dict:
+    """Call the bridge's listener endpoints and return their JSON (validation errors included).
+
+    Sends WEBHOOK_ADMIN_TOKEN as a bearer token when it is set. Never raises.
+    """
+    headers = {}
+    token = os.environ.get("WEBHOOK_ADMIN_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        response = requests.request(method, f"{WHATSAPP_API_BASE_URL}/listeners{path}",
+                                    json=json_body, headers=headers, timeout=30)
+    except requests.RequestException as e:
+        return {"success": False, "error": f"Could not reach the WhatsApp bridge: {e}"}
+    try:
+        return response.json()
+    except ValueError:
+        return {"success": False, "error": response.text or f"HTTP {response.status_code}"}
+
+
+def create_listener(listener: Dict) -> Dict:
+    """Create a message listener; `listener` holds the REST API fields."""
+    return _listener_request("POST", "", listener)
+
+
+def list_listeners() -> Dict:
+    """List every listener with its last delivery outcome."""
+    return _listener_request("GET", "")
+
+
+def delete_listener(listener_id: int) -> Dict:
+    """Delete a listener and its delivery log."""
+    return _listener_request("DELETE", f"/{int(listener_id)}")
+
+
+def set_listener_enabled(listener_id: int, enabled: bool) -> Dict:
+    """Enable or disable a listener."""
+    return _listener_request("PATCH", f"/{int(listener_id)}", {"enabled": bool(enabled)})
+
+
+def test_listener(listener_id: int) -> Dict:
+    """Send one signed test delivery to a listener's webhook."""
+    return _listener_request("POST", f"/{int(listener_id)}/test")

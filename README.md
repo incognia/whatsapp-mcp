@@ -154,6 +154,59 @@ Claude can access the following tools to interact with WhatsApp:
 - **send_audio_message**: Send an audio file as a WhatsApp voice message (requires the file to be an .ogg opus file or ffmpeg must be installed)
 - **download_media**: Download media from a WhatsApp message and get the local file path
 - **request_chat_history**: Ask your phone for older messages of one chat (see "Loading older history"); waits up to `wait_seconds` for the answer
+- **create_listener**, **list_listeners**, **delete_listener**, **set_listener_enabled**, **test_listener**: Manage message listeners that post matching live messages to a webhook (see "Message listeners and webhooks")
+
+### Message listeners and webhooks
+
+A listener watches live messages as they arrive and, when one matches, sends it as a signed JSON `POST` to a webhook: a local n8n or Home Assistant, a script, or a push service. Listeners only read and notify; they never reply or take any action on your account.
+
+**Criteria** (set at least one): `chat_jids`, `senders`, `contains` (case-insensitive, captions included), `regex` (RE2) and `mentions_me` (messages that tag you). With `match_mode: "or"` (default) any set criterion fires the listener; with `"and"` all of them must match. Several values in one list are always alternatives. Your own messages are ignored unless `include_from_me` is true. History sync, edits, status updates and messages older than `WEBHOOK_MAX_AGE` never fire a listener.
+
+```sh
+# Create: notify a local script when Amelia mentions "guardia" in the DevSecOps group
+curl -s -X POST http://127.0.0.1:8080/api/listeners -H 'Content-Type: application/json' -d '{
+  "name": "Guardias", "match_mode": "and",
+  "chat_jids": ["120363422597955321@g.us"], "contains": ["guardia"],
+  "webhook_url": "http://127.0.0.1:5678/webhook/wa", "secret": "a-secret-of-16-or-more-characters"
+}'
+curl -s http://127.0.0.1:8080/api/listeners                       # list (secrets never shown)
+curl -s -X POST http://127.0.0.1:8080/api/listeners/1/test        # one signed test delivery
+curl -s -X PATCH http://127.0.0.1:8080/api/listeners/1 -H 'Content-Type: application/json' -d '{"enabled": false}'
+curl -s http://127.0.0.1:8080/api/listeners/1/deliveries          # recent delivery outcomes
+curl -s -X DELETE http://127.0.0.1:8080/api/listeners/1
+```
+
+`POST /api/listeners/validate` checks a listener without saving it; invalid listeners get `400` with every problem in `errors`. From Claude, use the `create_listener`, `list_listeners`, `set_listener_enabled`, `test_listener` and `delete_listener` tools.
+
+**Payload** (`X-Webhook-Event: message`, `version: 1`): `delivery_id`, `listener` (`id`, `name`), `match_mode`, `matched` (criteria that matched) and `message` with `id`, `chat_jid`, `chat_name`, `is_group`, `sender`, `sender_jid`, `sender_name`, `timestamp` (RFC 3339, UTC), `content` (at most 4,096 characters, with `content_truncated` when cut), `media_type`, `filename`, `is_from_me` and `mentions_me`. Media is not embedded; fetch it with `download_media`.
+
+**Signature**: with a secret, each request carries `X-Webhook-Timestamp` and `X-Webhook-Signature: sha256=<hex HMAC-SHA256 of "<timestamp>." + body>`. Verify it and reject old timestamps:
+
+```python
+import hashlib, hmac, time
+
+def verify(secret: str, headers, body: bytes, tolerance: int = 300) -> bool:
+    timestamp = headers["X-Webhook-Timestamp"]
+    expected = "sha256=" + hmac.new(secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, headers.get("X-Webhook-Signature", "")) and abs(time.time() - int(timestamp)) <= tolerance
+```
+
+**Delivery**: asynchronous, by a small pool of workers behind a bounded queue, so a slow receiver never delays WhatsApp. A `2xx` answer means delivered. Network errors, timeouts, `408`, `429` and `5xx` are retried up to 4 attempts (about 2, 10 and 30 seconds apart, honouring `Retry-After` up to 60 seconds); other `4xx` answers and redirects fail at once. A full queue drops the delivery and logs it. Deliveries are not guaranteed across restarts: de-duplicate on `message.id` or `X-Webhook-Delivery`.
+
+**Safety**:
+
+- `webhook_url` must be `http` or `https` with no embedded credentials; `https` is required except for `localhost` and private networks. Link-local and cloud metadata addresses (`169.254.169.254`), multicast, broadcast and the bridge's own API are refused, also after DNS resolution. `WEBHOOK_ALLOWED_HOSTS` restricts targets further.
+- The listener endpoints refuse requests with an `Origin` header, non-JSON bodies and unexpected `Host` headers, so a web page cannot create listeners. If you bind the API beyond loopback (`BIND_ADDR`), set `WEBHOOK_ADMIN_TOKEN` and send it as `Authorization: Bearer <token>`; without it, listener management is refused.
+- Secrets are write-only, URL query values are masked in answers, logs show only the scheme and host, and the delivery log never stores message content.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WEBHOOK_ALLOWED_HOSTS` | (any) | Comma-separated host names, `*.domain` suffixes or IPs allowed as targets |
+| `WEBHOOK_ADMIN_TOKEN` | (none) | Bearer token for the listener endpoints; required when `BIND_ADDR` is not loopback |
+| `WEBHOOK_QUEUE_SIZE` | `256` | Deliveries waiting at most |
+| `WEBHOOK_WORKERS` | `2` | Concurrent deliveries |
+| `WEBHOOK_TIMEOUT` | `10s` | Per-attempt timeout (seconds or a Go duration) |
+| `WEBHOOK_MAX_AGE` | `15m` | Ignore messages older than this (`0` disables) |
 
 ### Media Handling Features
 

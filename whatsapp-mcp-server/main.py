@@ -14,7 +14,12 @@ from whatsapp import (
     send_audio_message as whatsapp_audio_voice_message,
     download_media as whatsapp_download_media,
     request_chat_history as whatsapp_request_chat_history,
-    get_chat_history_status as whatsapp_get_chat_history_status
+    get_chat_history_status as whatsapp_get_chat_history_status,
+    create_listener as whatsapp_create_listener,
+    list_listeners as whatsapp_list_listeners,
+    delete_listener as whatsapp_delete_listener,
+    set_listener_enabled as whatsapp_set_listener_enabled,
+    test_listener as whatsapp_test_listener
 )
 import time
 
@@ -319,6 +324,90 @@ def request_chat_history(chat_jid: str, count: int = 50, wait_seconds: int = 20)
         "more_available": status.get("more_available"),
         "message": message,
     }
+
+@mcp.tool()
+def create_listener(
+    name: str,
+    webhook_url: str,
+    chat_jids: Optional[List[str]] = None,
+    senders: Optional[List[str]] = None,
+    contains: Optional[List[str]] = None,
+    regex: Optional[str] = None,
+    mentions_me: bool = False,
+    match_mode: str = "or",
+    include_from_me: bool = False,
+    enabled: bool = True,
+    secret: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Create a message listener that POSTs matching live messages to a webhook.
+
+    Criteria (set at least one):
+        chat_jids: chats to watch (phone numbers, "<number>@s.whatsapp.net", "...@lid" or group "...@g.us")
+        senders: people to watch (phone numbers or JIDs)
+        contains: text fragments, matched case-insensitively against the text and captions
+        regex: an RE2 pattern matched against the same text (case-sensitive unless it uses (?i))
+        mentions_me: true to match messages that tag the account itself
+
+    match_mode "or" fires when any set criterion matches; "and" only when all of them match.
+    Several values inside one list are always alternatives (any chat of chat_jids, any sender
+    of senders), whatever the mode. Messages sent by the account are ignored unless
+    include_from_me is true. History sync, edits and old backlog never fire a listener.
+
+    webhook_url must be https, or http only for localhost and private networks. An optional
+    secret (16+ characters) signs each request with X-Webhook-Signature; it is never shown
+    again after creation. Validation problems come back as `errors` with success false.
+    """
+    listener: Dict[str, Any] = {
+        "name": name,
+        "webhook_url": webhook_url,
+        "match_mode": match_mode,
+        "mentions_me": mentions_me,
+        "include_from_me": include_from_me,
+        "enabled": enabled,
+    }
+    for key, value in (("chat_jids", chat_jids), ("senders", senders), ("contains", contains), ("regex", regex), ("secret", secret)):
+        if value is not None:
+            listener[key] = value
+    return whatsapp_create_listener(listener)
+
+
+@mcp.tool()
+def list_listeners() -> Dict[str, Any]:
+    """List message listeners with their criteria, whether they have a secret (never the
+    secret itself), masked webhook URLs and the outcome of each one's last delivery."""
+    return whatsapp_list_listeners()
+
+
+@mcp.tool()
+def delete_listener(listener_id: int) -> Dict[str, Any]:
+    """Delete a message listener and its delivery log.
+
+    Args:
+        listener_id: The listener's id, as shown by list_listeners
+    """
+    return whatsapp_delete_listener(listener_id)
+
+
+@mcp.tool()
+def set_listener_enabled(listener_id: int, enabled: bool) -> Dict[str, Any]:
+    """Enable or disable a message listener without deleting it.
+
+    Args:
+        listener_id: The listener's id, as shown by list_listeners
+        enabled: false to stop it firing, true to resume
+    """
+    return whatsapp_set_listener_enabled(listener_id, enabled)
+
+
+@mcp.tool()
+def test_listener(listener_id: int) -> Dict[str, Any]:
+    """Send one signed test delivery (event "test", fictitious message) to a listener's
+    webhook and report whether the receiver accepted it. Works for disabled listeners too.
+
+    Args:
+        listener_id: The listener's id, as shown by list_listeners
+    """
+    return whatsapp_test_listener(listener_id)
 
 if __name__ == "__main__":
     # Initialize and run the server

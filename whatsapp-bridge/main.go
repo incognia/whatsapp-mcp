@@ -98,6 +98,12 @@ func openMessageStore(dsn string) (*MessageStore, error) {
 		return nil, fmt.Errorf("failed to create tables: %v", err)
 	}
 
+	// Versioned, additive schema steps on top of the base tables
+	if err := migrate(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+
 	return &MessageStore{db: db}, nil
 }
 
@@ -734,6 +740,9 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 	if err != nil {
 		logger.Warnf("Failed to store message: %v", err)
 	} else {
+		// Live, stored messages may fire message listeners (history sync never reaches here)
+		notifyListeners(client, msg, name, content, mediaType, filename)
+
 		// Log message reception
 		timestamp := msg.Info.Timestamp.Format("2006-01-02 15:04:05")
 		direction := "←"
@@ -963,6 +972,9 @@ func extractDirectPathFromURL(rawURL string) string {
 // Start a REST API server to expose the WhatsApp client functionality
 func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port int, logger waLog.Logger) {
 	// Handler for sending messages
+	// Message listeners and their webhooks
+	registerListenerRoutes(http.DefaultServeMux, newListenerAPI(client, messageStore, loadWebhookConfig(), port))
+
 	// On-demand history for one chat: POST requests it, GET reads its status
 	http.HandleFunc("/api/history/backfill", newClientBackfillService(client, messageStore).handleHistoryBackfill)
 
@@ -1068,10 +1080,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 	// same LAN (home WiFi, café, hotel), so we restrict to 127.0.0.1. The MCP
 	// server connects via http://localhost:{port} (whatsapp-mcp-server/whatsapp.py),
 	// which works unchanged. To opt into LAN exposure, set BIND_ADDR=0.0.0.0.
-	bindAddr := os.Getenv("BIND_ADDR")
-	if bindAddr == "" {
-		bindAddr = "127.0.0.1"
-	}
+	bindAddr := restBindAddr()
 	serverAddr := fmt.Sprintf("%s:%d", bindAddr, port)
 	fmt.Printf("Starting REST API server on %s...\n", serverAddr)
 
@@ -1140,6 +1149,9 @@ func main() {
 		return
 	}
 	defer messageStore.Close()
+
+	// Message listeners and webhook delivery
+	setupListeners(messageStore, loadWebhookConfig(), 8080, logger)
 
 	// Setup event handling for messages and history sync
 	client.AddEventHandler(func(evt interface{}) {
@@ -1240,6 +1252,7 @@ func main() {
 	<-exitChan
 
 	fmt.Println("Disconnecting...")
+	webhookDeliverer.Shutdown(5 * time.Second)
 	// Disconnect client
 	client.Disconnect()
 }
